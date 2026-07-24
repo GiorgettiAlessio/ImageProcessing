@@ -4,8 +4,7 @@
     python3 /home/alessio/Desktop/progettoImage/ImageProcessing/coordinateAlphaPose.py \\
         --cfg configs/coco/resnet/256x192_res50_lr1e-3_1x.yaml \\
         --checkpoint pretrained_models/fast_res50_256x192.pth \\
-        --webcam 3 \\
-        --vis (per webcam) \\
+        --webcam (SCEGLIERE CANALE WEBCAM) \\
         --print-fps
 """
 
@@ -30,7 +29,7 @@ from alphapose.utils.config import update_config
 from alphapose.utils.transforms import get_func_heatmap_to_coord
 from alphapose.utils.webcam_detector import WebCamDetectionLoader
 from alphapose.utils.pPose_nms import pose_nms
-from alphapose.utils.vis import vis_frame  # <-- Import per la visualizzazione
+from alphapose.utils.vis import vis_frame
 from detector.apis import get_detector
 
 
