@@ -4,15 +4,11 @@
 ---
 #### Valutazione del progetto e scelta dell'approccio:
 
-- **AlphaPose**: Fornisce coordinate spaziali 2D/3D (X, Y, Z) dei giunti.
-Come si usa in Unity: Richiede il sistema di Cinematica Inversa (HybridIK). Sposti i punti di destinazione (targets) nello spazio 3D e l'IK calcola come devono piegarsi gomiti e ginocchia.
-- **SAM3DBody-cpp (Modello MHR / SMPL)**: Calcola direttamente le rotazioni relative delle articolazioni (Quaternioni/Euler Angles) o file .bvh.
-Come si usa in Unity: È l'approccio più pulito ed efficiente. Applicate direttamente le rotazioni alle ossa dell'avatar senza bisogno di IK, eliminando i problemi di snodo innaturale degli arti.
+- **SCENARIO A - L'Ideale (HybrIK / SAM3DBody)**: Il modello AI calcola e invia direttamente le rotazioni relative delle articolazioni (Quaternioni/Euler Angles) del modello SMPL.
+*Come si usa in Unity:* È l'approccio più pulito ed efficiente. Applicate direttamente le rotazioni alle ossa dell'avatar senza bisogno di Cinematica Inversa (IK), eliminando i problemi di snodo innaturale degli arti.
+- **SCENARIO B - Piano di Riserva (AlphaPose / Posizioni 3D)**: L'algoritmo fornisce solo le coordinate spaziali (X, Y, Z) dei giunti.
+*Come si usa in Unity:* Richiede il sistema di Cinematica Inversa ufficiale di Unity (**Animation Rigging**)   . Sposti i punti di destinazione (targets) nello spazio 3D e l'IK calcola matematicamente come devono piegarsi gomiti e ginocchia.
 
-#### Quale approccio scegliere per il tuo lavoro in Unity?
-Pianifica una doppia gestione nello script C# Unity:
-- Approccio Primario (Rotazioni Dirette / SAM3DBody): Se ti arrivano angoli di rotazione (o dati MHR/SMPL), applicali direttamente ai giunti dell'Avatar Humanoid.
-- Approccio Secondario (Coordinate Posizionali + HybridIK): Se ti inviano coordinate X,Y,Z (da AlphaPose), aggiorna dei GameObject vuoti e usa HybridIK per guidare gli arti dell'avatar.
 
 ---
 
@@ -48,49 +44,27 @@ Per collegare i dati esterni all'avatar, si crea una struttura a nodi nella scen
 
 La scelta dell'algoritmo di stima della posa determina l'efficacia del tracciamento. Di seguito vengono analizzati i tre approcci principali evidenziandone vantaggi e limiti tecnologici.
 
-### 2.1 AlphaPose
-AlphaPose è un sistema di tracciamento multi-persona *Top-Down*. Rileva prima le persone nella scena (Bounding Box) e successivamente stima i punti chiave di ciascun individuo.
+### 2.1 Framework Basati su Modelli Parametrici (HybrIK / SAM3DBody) - SCENARIO A
+Questi modelli tentano di ricostruire l'intera superficie corporea partendo da una singola immagine   .
+*   **Vantaggio in Unity:** Calcolano direttamente i vettori di rotazione relativa delle giunzioni   . Inviando a Unity le *rotazioni* anziché le *posizioni*, si elimina la necessità di calcolare la cinematica inversa in Unity   .
 
-* **Architettura Tecnica:** Sfrutta reti neurali profonde (come i moduli di attenzione e i classificatori regionali) per massimizzare la precisione anche in presenza di sovrapposizioni o posture complesse.
-* **Limitazioni Real-Time:** L'elevata accuratezza richiede un costo computazionale massiccio. Per girare in tempo reale (30+ FPS), necessita obbligatoriamente di una GPU NVIDIA di fascia alta con supporto CUDA. L'output nativo è spesso bidimensionale, richiedendo algoritmi di *lifting* per proiettare i punti nello spazio 3D.
-
-### 2.2 Framework Basati su Modelli Parametrici (SMPL / Sam3dbody)
-Questi modelli non si limitano a trovare i nodi dello scheletro, ma tentano di ricostruire l'intera superficie corporea partendo da una singola immagine.
-
-* **Architettura Tecnica:** Basandosi sul modello matematico SMPL (Skinned Multi-Person Linear Model), l'algoritmo calcola i parametri di forma del corpo e, soprattutto, i vettori di **rotazione relativa delle giunzioni**.
-* **Limitazioni Real-Time:** Estrarre una mesh intera a 60 FPS è proibitivo per la maggior parte dei sistemi consumer. Tuttavia, il vantaggio teorico è enorme: inviando a Unity direttamente le *rotazioni* (angoli) invece delle *posizioni*, si elimina la necessità di calcolare la cinematica inversa in Unity, poiché le ossa sanno già come ruotare.
+### 2.2 AlphaPose - SCENARIO B
+AlphaPose rileva prima le persone nella scena (Bounding Box) e successivamente stima i punti chiave (coordinate X, Y, Z)   .
+*   **Limiti in Unity:** L'output nativo richiede algoritmi di *lifting* per proiettare i punti nello spazio 3D   . In Unity, sarai obbligato a usare il sistema *Animation Rigging* per far calcolare al motore grafico come piegare gli arti per raggiungere tali coordinate.
 
 
 
-## 3. APPLICAZIONE DELLA CINEMATICA INVERSA (HYBRIDIK) IN UNITY
 
-Quando da Python riceviamo soltanto coordinate spaziali (X, Y, Z), il modello 3D non sa come orientare i propri arti. Se muoviamo solo il polso virtuale, il gomito e la spalla rimarrebbero immobili, distorcendo l'avatar. Per risolvere questo problema si utilizza la **Cinematica Inversa (IK)**, nello specifico il pacchetto **HybridIK**.
-
-### Meccanismo di Funzionamento
-A differenza della cinematica diretta (dove si ruota la spalla per muovere la mano), l'IK fa il contrario:
-
-1. Python comunica la posizione 3D della mano.
-2. Unity sposta il `Target_Mano_DX` in quella esatta coordinata.
-3. Il solutore **HybridIK**, agganciato al braccio dell'avatar, calcola istantaneamente le rotazioni algebriche necessarie per la spalla e il gomito affinché la mano tocchi il target.
-
-### Vantaggi di HybridIK rispetto all'IK Standard
-HybridIK combina algoritmi analitici e geometrici per garantire:
-
-* **Vincoli Anatomici:** Impedisce alle articolazioni di compiere rotazioni impossibili per un essere umano (es. l'iperestensione del gomito).
-* **Fluidità e Risparmio Computazionale:** Risolve le equazioni matematiche dello scheletro in pochi millisecondi, mantenendo il framerate di Unity stabile.
-
-
-
-## 4. ARCHITETTURA DI COMUNICAZIONE E PROTOCOLLO DI STREAMING UDP
+## 3. ARCHITETTURA DI COMUNICAZIONE E PROTOCOLLO DI STREAMING UDP
 
 Il collegamento tra l'ambiente di computazione (Python) e l'ambiente di rendering (Unity) deve avvenire senza accumulare ritardi. Il protocollo scelto per questa pipeline è **UDP (User Datagram Protocol)**.
 
 |          LATO PYTHON              |       |            LATO UNITY             |
 |:----------------------------------|:------|:----------------------------------|
-| 1. Cattura Frame (OpenCV)         ||1. Thread UDP in ascolto (Porta)   |
-| 2. Inferenza (AlphaPose)          || 2. Parsing stringa (JSON/Byte)    |
-| 3. Serializzazione Coordinate     || 3. Assegnazione coordinate nodi   |
-| 4. Invio Socket UDP               | --(Rete)&rarr; | 4. Esecuzione HybridIK & Render   |
+| 1. Inferenza (HybrIK/AlphaPose)    | | 1. Thread UDP in ascolto    |
+| 2. Estrazione Rotazioni/Posizioni | | 2. Parsing JSON    |
+| 3. Invio Socket UDP    | --(Rete)&rarr; | 3. Rotazione Ossa o Calcolo IK    |
+
 
 
 ### Perché UDP e non TCP?
@@ -107,31 +81,40 @@ I dati vengono generalmente serializzati in stringhe strutturate o array di byte
   "z": -0.114
 }
 ```
+Se ricevessi le rotazioni anziché le semplici posizioni (XYZ), il formato JSON dovrebbe includere i dati per orientare l'osso nello spazio tridimensionale.
+Il formato più utilizzato e sicuro in grafica 3D per evitare problemi di blocco del gimbal (Gimbal Lock) è basato sui Quaternioni (`x, y, z, w`), oppure in alternativa sugli angoli di Eulero (`rx, ry, rz`).
+Ecco come apparirebbe il payload JSON strutturato per inviare le rotazioni (o un pacchetto completo per più giunti e una persona):
+
+```json
+{
+  "person_id": 0,
+  "joints": [
+    {
+      "joint_name": "left_wrist",
+      "rw": 0.923,
+      "rx": 0.0,
+      "ry": 0.382,
+      "rz": 0.0
+    }
+  ]
+}
+```
+Dettaglio dei campi per le rotazioni:
+- `rw, rx, ry, rz`: Rappresentano i quattro componenti di un Quaternione, che descrivono l'orientamento puro dell'articolazione rispetto al suo osso padre.  
+- Perché i Quaternioni? Unity gestisce nativamente la rotazione delle ossa (`transform.localRotation`) tramite Quaternioni. Ricevere questi quattro valori permette di applicarli direttamente all'avatar senza dover calcolare complessi algoritmi di cinematica inversa (IK).
 
 In Unity, un thread parallelo (Background Worker) rimane in ascolto sulla porta locale impostata (es. `127.0.0.1:7000`), deserializza la stringa e passa i valori numerici al ciclo di aggiornamento grafico principale (`Update`), completando il ciclo di animazione in tempo reale.
 
 ---
 
-#### Guida Dettagliata per l'Implementazione su Unity
 
-### PASSO 1: Configurazione dell'Avatar Humanoid in Unity
-*già visto sopra &uarr;*
+## 4. GUIDA DETTAGLIATA PER L'IMPLEMENTAZIONE IN UNITY
 
-Per fare in modo che Unity sappia muovere il personaggio indipendentemente dalla sua forma specifica:
+### PASSO 1: Configurazione dell'Avatar Humanoid
+Segui la configurazione della scheda **Rig -> Humanoid** descritta al punto 1   . Verifica la mappatura cliccando su **Configure...**   .
 
-1. Trascina il file `.fbx` dell'avatar nella finestra **Project** (nella cartella `Assets`).
-2. Seleziona il file nell'Assets e apri la scheda **Rig** nella finestra **Inspector** (in alto a destra).
-3. Cambia **Animation Type** da *Generic* a **Humanoid**.
-4. Clicca su **Apply**.
-5. Clicca sul pulsante **Configure...** che appare subito sotto per verificare la mappatura delle ossa (dovrebbero apparire tutte in verde). Se qualche osso manca, trascinalo manualmente nello schema.
-
-
-
-### PASSO 2: Creazione dello Script Ricevitore UDP in C#
-
-In Unity, l'interfaccia grafica (UI e posizionamento oggetti) gira sul **Main Thread**. I dati UDP arrivano invece in continuo su un **Thread secondario**. Lo script deve ricevere i dati via UDP su un thread separato e salvarli in una variabile sicura, che verrà poi letta nell'evento `Update()` per muovere il personaggio.
-
-Crea uno script C# chiamato `UDPReceiver.cs` e assegnalo a un GameObject vuoto nella scena (chiamalo `[UDP_Manager]`):
+### PASSO 2: Creazione dello Script Ricevitore UDP (`UDPReceiver.cs`)
+In Unity i dati UDP arrivano in continuo su un **Thread secondario**   . Crea un GameObject vuoto chiamato `[UDP_Manager]` e assegnagli questo script per ricevere i dati e salvarli in modo sicuro   :
 
 ```csharp
 using System;
@@ -143,21 +126,16 @@ using UnityEngine;
 
 public class UDPReceiver : MonoBehaviour
 {
-    [Header("Configurazione Rete")]
     public int port = 7000;
-    
     private UdpClient client;
     private Thread receiveThread;
     
-    // Stringa JSON grezza ricevuta
-    [HideInInspector]
-    public string latestData = "";
+    [HideInInspector] public string latestData = "";
     private readonly object lockObject = new object();
 
     void Start()
     {
-        receiveThread = new Thread(new ThreadStart(ReceiveData));
-        receiveThread.IsBackground = true;
+        receiveThread = new Thread(new ThreadStart(ReceiveData)) { IsBackground = true };
         receiveThread.Start();
     }
 
@@ -170,158 +148,66 @@ public class UDPReceiver : MonoBehaviour
             {
                 IPEndPoint anyIP = new IPEndPoint(IPAddress.Any, 0);
                 byte[] data = client.Receive(ref anyIP);
-                string text = Encoding.UTF8.GetString(data);
-
-                lock (lockObject)
-                {
-                    latestData = text;
-                }
+                lock (lockObject) { latestData = Encoding.UTF8.GetString(data); }
             }
-            catch (Exception err)
-            {
-                Debug.LogError("Errore UDP: " + err.ToString());
-            }
+            catch (Exception err) { Debug.LogError("Errore UDP: " + err.ToString()); }
         }
     }
 
     public string GetLatestData()
     {
-        lock (lockObject)
-        {
-            return latestData;
-        }
+        lock (lockObject) { return latestData; }
     }
 
     void OnApplicationQuit()
     {
-        if (receiveThread != null && receiveThread.IsAlive)
-            receiveThread.Abort();
-        if (client != null)
-            client.Close();
+        if (receiveThread != null && receiveThread.IsAlive) receiveThread.Abort();
+        client?.Close();
     }
 }
 ```
 
-
-
-### PASSO 3: Mappatura dei Dati sull'Avatar (Rotazioni o IK)
-
-Crea una struttura dati compatibile con il formato JSON. Ad esempio, se inviano un pacchetto contenente posizioni/rotazioni dei giunti:
-
-#### Definizione delle classi per la Deserializzazione JSON:
+### PASSO 3: Mappatura Dati sull'Avatar (SCENARIO A - ROTAZIONI DIRETE)
+Se Python riesce a inviare le rotazioni, lo script `AvatarPoseController.cs` le applicherà fluidamente   .
 
 ```csharp
-[System.Serializable]
-public class JointData
+void ApplyPose(PosePacket packet)
 {
-    public string joint_name;
-    public float x;
-    public float y;
-    public float z;
-    public float rw; // Rotazione quaternione (opzionale)
-    public float rx;
-    public float ry;
-    public float rz;
-}
-
-[System.Serializable]
-public class PosePacket
-{
-    public int person_id;
-    public JointData[] joints;
-}
-```
-
-#### Script di Controllo Avatar (`AvatarPoseController.cs`):
-Collega questo script direttamente al Game Object del tuo **Avatar 3D**.
-
-```csharp
-using UnityEngine;
-
-public class AvatarPoseController : MonoBehaviour
-{
-    public UDPReceiver udpReceiver;
-    public Animator animator; // Componente Animator dell'Avatar Humanoid
-
-    void Start()
+    foreach (var j in packet.joints)
     {
-        if (animator == null)
-            animator = GetComponent<Animator>();
-    }
-
-    void Update()
-    {
-        string json = udpReceiver.GetLatestData();
-        if (string.IsNullOrEmpty(json)) return;
-
-        try
+        HumanBodyBones bone = MapJointToBone(j.joint_name);
+        if (bone != HumanBodyBones.LastBone)
         {
-            PosePacket packet = JsonUtility.FromJson<PosePacket>(json);
-            ApplyPose(packet);
-        }
-        catch (System.Exception e)
-        {
-            // Gestione eventuali errori di parsing
-        }
-    }
-
-    void ApplyPose(PosePacket packet)
-    {
-        foreach (var j in packet.joints)
-        {
-            // Converti il nome del giunto nell'osso dell'Avatar Humanoid di Unity
-            HumanBodyBones bone = MapJointToBone(j.joint_name);
-            if (bone != HumanBodyBones.LastBone)
+            Transform boneTransform = animator.GetBoneTransform(bone);
+            if (boneTransform != null)
             {
-                Transform boneTransform = animator.GetBoneTransform(bone);
-                if (boneTransform != null)
-                {
-                    // Se ricevi rotazioni (Quaternioni):
-                    Quaternion targetRotation = new Quaternion(j.rx, j.ry, j.rz, j.rw);
-                    boneTransform.localRotation = Quaternion.Slerp(boneTransform.localRotation, targetRotation, Time.deltaTime * 15f);
-                }
+                // Assegnazione diretta della rotazione senza IK
+                Quaternion targetRotation = new Quaternion(j.rx, j.ry, j.rz, j.rw);
+                boneTransform.localRotation = Quaternion.Slerp(boneTransform.localRotation, targetRotation, Time.deltaTime * 15f);
             }
         }
     }
-
-    HumanBodyBones MapJointToBone(string jointName)
-    {
-        switch (jointName)
-        {
-            case "left_shoulder": return HumanBodyBones.LeftUpperArm;
-            case "left_elbow": return HumanBodyBones.LeftLowerArm;
-            case "left_wrist": return HumanBodyBones.LeftHand;
-            case "right_shoulder": return HumanBodyBones.RightUpperArm;
-            case "right_elbow": return HumanBodyBones.RightLowerArm;
-            case "right_wrist": return HumanBodyBones.RightHand;
-            case "hip": return HumanBodyBones.Hips;
-            // Aggiungi le altre mappature in base al dataset scelto
-            default: return HumanBodyBones.LastBone;
-        }
-    }
 }
 ```
 
-
-### PASSO 4: Integrazione di HybridIK (Se si usano le Posizioni X, Y, Z)
-
-Se il modello Python invia solo posizioni X, Y, Z anziché rotazioni:
-
-1. **Importa il package HybridIK** dentro Unity (`Assets -> Import Package -> Custom Package`).
-2. Crea dei **GameObject Vuoti** nella scena che rappresentino i target (es. `Target_LeftHand`, `Target_RightHand`).
-3. Applica il componente **HybridIK Solver** sul braccio dell'Avatar:
-   * Imposta come **Root** la spalla (`LeftUpperArm`).
-   * Imposta come **Tip** la mano (`LeftHand`).
-   * Assegna il GameObject `Target_LeftHand` come **Target**.
-4. Nello script C#, anziché ruotare direttamente l'osso, aggiorna semplicemente la posizione del `Target_LeftHand`:
-
+### PASSO 4: Integrazione "Animation Rigging" (SCENARIO B - POSIZIONI X, Y, Z)
+Se Python invia coordinate spaziali (X,Y,Z), devi usare l'IK per evitare che l'avatar si deformi muovendo solo il polso   :
+1. Vai su **Window > Package Manager** in Unity e installa il pacchetto gratuito **Animation Rigging**.
+2. Seleziona il tuo Avatar nella scena, vai nel menu in alto: **Animation Rigging > Rig Setup**.
+3. Crea dei GameObject vuoti per i target (es. `Target_Mano_DX`).
+4. Aggiungi il componente **Two Bone IK Constraint** (per le braccia/gambe).
+5. Assegna nello script del Constraint le ossa (Root=Spalla, Mid=Gomito, Tip=Mano) e il tuo `Target_Mano_DX` come bersaglio finale.
+6. **Nello script C#**, anziché ruotare l'osso, sposterai il target nello spazio 3D:
 ```csharp
-targetLeftHand.transform.position = Vector3.Lerp(
-    targetLeftHand.transform.position, 
+targetManoDX.transform.position = Vector3.Lerp(
+    targetManoDX.transform.position, 
     new Vector3(j.x, j.y, j.z), 
     Time.deltaTime * 15f
 );
 ```
+Il solutore calcolerà istantaneamente le rotazioni necessarie rispettando i vincoli anatomici   
+
+
 
 ---
 
