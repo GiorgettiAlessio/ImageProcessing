@@ -2,7 +2,7 @@
     Comandi per windows!!
     Per runnare: installre anaconda prompt e scrivere:
     conda activate alphapose
-    cd "Dove avete AlfaPose il repository" es: C:\ Users\ marti \ AlphaPose
+    cd "Dove avete AlfaPose il repository" es: C:\Users\marti \AlphaPose
     python newcoordinateAlphaPose.py --cfg configs/coco/resnet/256x192_res50_lr1e-3_1x.yaml --checkpoint pretrained_models/fast_res50_256x192.pth --webcam 0 --gpus 0 --vis --print-fps
 """
 
