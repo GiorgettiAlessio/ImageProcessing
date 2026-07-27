@@ -1,6 +1,11 @@
 # SAM3DBody
+
 https://github.com/facebookresearch/sam-3d-body
-fa la stessa cosa di sam3dbody cpp ma con pyton 
+fa la stessa cosa di sam3dbody cpp ma con pyton
+
+Plug in per real time:
+https://github.com/Washin1918/SAM3DBody-cpp
+
 # SAM3DBody-cpp
 
 **SAM3DBody-cpp** è un software open-source sviluppato interamente in C++. Questo programma elimina del tutto Python durante l'esecuzione e combina modelli di Intelligenza Artificiale ottimizzati su scheda video (GPU) con calcoli matematici veloci su processore (CPU). Il risultato è un sistema capace di tracciare più persone contemporaneamente, creando un "manichino 3D" in tempo reale pronto per essere usato in videogiochi o programmi di animazione.
