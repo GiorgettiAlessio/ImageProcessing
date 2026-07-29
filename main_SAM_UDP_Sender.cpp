@@ -255,9 +255,9 @@ static void send_pose_udp(int sock, const sockaddr_in& addr,
                 size_t idx = 6 + (k - 1) * 3;
                 if (idx + 2 < vals.size())
                 {
-                    rz = vals[idx + 0];
-                    ry = vals[idx + 1];
-                    rx = vals[idx + 2];
+                    rz = vals[idx + 0];   
+                    rx = vals[idx + 1];   
+                    ry = vals[idx + 2];   
                 }
             }
 
