@@ -61,6 +61,8 @@ if not os.path.exists(target_smplx_file):
         )
 
 # Ora possiamo importare in sicurezza i moduli di HybrIK
+
+
 with in_directory(MMDET_DIR):
     from mmdet.apis import inference_detector, init_detector
 
@@ -89,6 +91,21 @@ JOINT_NAMES = [
     "R_Collar", "Head", "L_Shoulder", "R_Shoulder", "L_Elbow", "R_Elbow",
     "L_Wrist", "R_Wrist", "L_Hand", "R_Hand"
 ]
+
+def rotmats_to_quat_dict(theta_mats):
+    r = R.from_matrix(theta_mats)
+    quats = r.as_quat()  # [x, y, z, w] per ciascuno dei 24 giunti
+
+    rotations_dict = {}
+    for i, name in enumerate(JOINT_NAMES):
+        x, y, z, w = quats[i]
+        rotations_dict[name] = {
+            "x": float(x),
+            "y": float(y),
+            "z": float(z),
+            "w": float(w)
+        }
+    return rotations_dict
 
 
 def build_hybrik(cfg_file, ckpt_file, gpu):
@@ -129,19 +146,27 @@ def build_hybrik(cfg_file, ckpt_file, gpu):
     return hybrik_model, transformation
 
 
-def rotmats_to_euler_dict(theta_mats):
-    """Converte le matrici di rotazione (24, 3, 3) in angoli di Eulero in gradi per ogni giunto"""
-    r = R.from_matrix(theta_mats)
-    euler_angles = r.as_euler('xyz', degrees=True)
-    
-    rotations_dict = {}
-    for i, name in enumerate(JOINT_NAMES):
-        rotations_dict[name] = {
-            "x": round(float(euler_angles[i, 0]), 2),
-            "y": round(float(euler_angles[i, 1]), 2),
-            "z": round(float(euler_angles[i, 2]), 2)
-        }
-    return rotations_dict
+def smooth_bbox(previous_bbox, new_bbox, alpha=0.25):
+    """
+    Filtra il bounding box per evitare piccoli movimenti/jitter
+    della detection.
+
+    alpha = 1.0  -> nessun filtro
+    alpha = 0.1  -> molto stabile ma lento
+    """
+
+    if previous_bbox is None:
+        return list(new_bbox)
+
+    previous_bbox = np.array(previous_bbox, dtype=np.float32)
+    new_bbox = np.array(new_bbox, dtype=np.float32)
+
+    smoothed = (
+        alpha * new_bbox +
+        (1.0 - alpha) * previous_bbox
+    )
+
+    return smoothed.tolist()
 
 
 def main():
@@ -181,13 +206,30 @@ def main():
         opt.hybrik_ckpt,
         opt.gpu
     )
+        
     import socket
     send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     cap = cv2.VideoCapture(opt.webcam_id)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     assert cap.isOpened(), 'Impossibile aprire la webcam'
 
+    DETECTION_INTERVAL = 10
+    frame_counter = 0
+
+    last_bbox = None
+    smoothed_bbox = None
+
+    # Più alto = bbox più reattivo
+    # Più basso = bbox più stabile
+    BBOX_SMOOTHING = 0.25
+
+
     print(f'Streaming JSON avviato -> invio a {opt.unity_ip}:{opt.unity_port}  (q per uscire)')
+
+
+   
 
     while cap.isOpened():
         ret, frame_bgr = cap.read()
@@ -197,30 +239,99 @@ def main():
         input_image = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
 
         # --- Detection persona ---
-        with in_directory(MMDET_DIR):
-            result = inference_detector(det_model, frame_bgr)
+        # ============================================================
+        # PERSON DETECTION
+        # ============================================================
 
-        # MMDetection 2.x:
-        # result[0] = bounding boxes delle persone
-        person_bboxes_all = result[0]
+        frame_counter += 1
 
-        if len(person_bboxes_all) == 0:
-            person_bboxes = np.empty((0, 4))
-        else:
+        run_detection = (
+            last_bbox is None or
+            frame_counter % DETECTION_INTERVAL == 0
+        )
+
+        if run_detection:
+
+            with in_directory(MMDET_DIR):
+                result = inference_detector(
+                    det_model,
+                    frame_bgr
+                )
+
+            person_bboxes_all = result[0]
+
+            if len(person_bboxes_all) == 0:
+
+                last_bbox = None
+                smoothed_bbox = None
+
+                if opt.show:
+                    x1, y1, x2, y2 = map(int, tight_bbox)
+
+                    cv2.rectangle(
+                        frame_bgr,
+                        (x1, y1),
+                        (x2, y2),
+                        (0, 255, 0),
+                        2
+                    )
+
+                    cv2.imshow('Live', frame_bgr)
+
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+
+                continue
+
             scores = person_bboxes_all[:, 4]
-
             keep = scores > opt.det_score_thr
 
             person_bboxes = person_bboxes_all[keep, :4]
 
-        if len(person_bboxes) == 0:
-            if opt.show:
-                cv2.imshow('Live', frame_bgr)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-            continue
+            if len(person_bboxes) == 0:
 
-        tight_bbox = person_bboxes[0][:4].tolist()
+                last_bbox = None
+                smoothed_bbox = None
+
+                if opt.show:
+                    cv2.imshow('Live', frame_bgr)
+
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+
+                continue
+
+            # --------------------------------------------------------
+            # NUOVA DETECTION
+            # --------------------------------------------------------
+
+            detected_bbox = person_bboxes[0][:4].tolist()
+
+            # Salviamo il bbox originale
+            last_bbox = detected_bbox
+
+            # Filtriamo il nuovo bbox
+            smoothed_bbox = smooth_bbox(
+                smoothed_bbox,
+                detected_bbox,
+                BBOX_SMOOTHING
+            )
+
+        else:
+
+            # --------------------------------------------------------
+            # NESSUNA DETECTION
+            # --------------------------------------------------------
+
+            if smoothed_bbox is None:
+                continue
+
+
+        # ------------------------------------------------------------
+        # BBOX USATO DA HYBRIK
+        # ------------------------------------------------------------
+
+        tight_bbox = smoothed_bbox
 
         # --- HybrIK sullo stesso frame appena catturato ---
         with in_directory(HYBRIK_DIR):
@@ -230,7 +341,7 @@ def main():
 
                 pose_output = hybrik_model(
                     pose_input,
-                    flip_test=True,
+                    flip_test=False,
                     bboxes=torch.from_numpy(np.array(bbox)).to(pose_input.device).unsqueeze(0).float(),
                     img_center=torch.from_numpy(img_center).to(pose_input.device).unsqueeze(0).float()
                 )
@@ -249,7 +360,9 @@ def main():
                 
 
         # Preparazione dizionario dati
-        unity_rotations = rotmats_to_euler_dict(theta_mats)
+        unity_rotations = rotmats_to_quat_dict(theta_mats)
+
+       
         
         data_packet = {
             "person_id": 0,
@@ -259,7 +372,7 @@ def main():
             "root_position": {
                 "x": float(transl[0]),
                 "y": float(transl[1]),
-                "z": float(transl[2])
+                "z": -float(transl[2])
             }
         }
 

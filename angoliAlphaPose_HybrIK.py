@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument("--webcam", type=int, default=0)
     parser.add_argument("--detector", type=str, default="yolo")
     parser.add_argument(
-        "--gpus", type=str, default="-1", help="'-1' per CPU, '0' per GPU"
+        "--gpus", type=str, default="0", help="'-1' per CPU, '0' per GPU"
     )
     parser.add_argument("--detbatch", type=int, default=1)
     parser.add_argument("--posebatch", type=int, default=64)
