@@ -357,22 +357,6 @@ HybrIK utilizza lo schema SMPL a 24 giunti, mentre SAM3DBody-cpp utilizza uno sc
 
 ---
 
-## 5.2 Binding del socket e problemi risolti
-
-In fase di test locale è stato riscontrato che il sistema operativo poteva bloccare il traffico UDP di loopback a causa di restrizioni di rete/firewall se il socket veniva aperto senza un binding esplicito.
-
-La soluzione adottata consiste nell'associare esplicitamente il client UDP di Unity all'indirizzo `127.0.0.1` sulla porta `5065`.
-
-È stato inoltre corretto un errore di compilazione (`CS0117`) dovuto all'uso di `IPEndPoint.Any`, proprietà che non esiste.
-
-Il valore corretto per l'ascolto su tutte le interfacce è:
-
-```csharp
-IPAddress.Any
-```
-
----
-
 # 6. Integrazione in Unity
 
 ## 6.1 Configurazione dell'avatar Humanoid
