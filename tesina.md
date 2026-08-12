@@ -4,7 +4,7 @@
 
 _Un sistema di motion capture markerless basato su computer vision, comunicazione UDP e retargeting scheletrico in tempo reale_
 
-**Tesina di progetto — Computer Vision & Grafica 3D Interattiva**
+**Tesina di progetto — Image processing and computer vision 2026**
 
 ---
 
@@ -20,7 +20,7 @@ Il sistema è stato validato tramite test di simulazione locale e collegamento d
 
 # 1. Introduzione
 
-L'obiettivo del progetto è realizzare una pipeline completa di **motion capture markerless**: a partire da un flusso video (webcam o file) contenente una persona, il sistema deve riconoscere la posa del corpo umano e riprodurla fedelmente sul movimento di un avatar 3D in Unity, in tempo reale e senza l'uso di sensori indossabili o marker fisici.
+L'obiettivo del progetto è realizzare una pipeline completa di **motion capture**: a partire da un flusso video (webcam o file) contenente una persona, il sistema deve riconoscere la posa del corpo umano e riprodurla fedelmente sul movimento di un avatar 3D in Unity, in tempo reale e senza l'uso di sensori indossabili o marker fisici.
 
 L'architettura complessiva è divisa in tre macro-blocchi, che comunicano tramite rete locale:
 
@@ -297,21 +297,6 @@ Rispetto allo Scenario B, la differenza principale consiste quindi nel modulo ut
 
 ---
 
-## 4.4 Confronto dettagliato delle tre pipeline
-
-| Caratteristica     | Scenario A        | Scenario B         | Scenario C           |
-| ------------------ | ----------------- | ------------------ | -------------------- |
-| Pipeline           | SAM3DBody-cpp     | AlphaPose + HybrIK | MMDetection + HybrIK |
-| Detector           | Integrato         | AlphaPose          | MMDetection          |
-| Pose recovery      | SAM-3D-Body / MHR | HybrIK / SMPL      | HybrIK / SMPL        |
-| Rig                | MHR, dettagliato  | SMPL, 24 giunti    | SMPL, 24 giunti      |
-| Rotazioni          | Disponibili       | Disponibili        | Disponibili          |
-| Joint 3D           | Disponibili       | Disponibili        | Disponibili          |
-| Runtime principale | C++ / ONNX        | Python             | Python               |
-| Comunicazione      | UDP / JSON        | UDP / JSON         | UDP / JSON           |
-
----
-
 # 5. Protocollo di comunicazione UDP
 
 Il collegamento tra l'ambiente di computazione (Python/C++) e l'ambiente di rendering (Unity) avviene tramite protocollo **UDP (User Datagram Protocol)**.
@@ -509,7 +494,15 @@ La verifica ha permesso di controllare che, a parità di formato di pacchetto, l
 
 Questo conferma la bontà della scelta di utilizzare uno **schema JSON condiviso** tra le diverse implementazioni.
 
----
+Di seguito i video dimostravivi dei test sulle tre metodologie:
+
+**Test di SAM3DBody-cpp eseguito su Linux in CPU mode:**
+
+![Sam test](video/Sam_test.gif)
+
+**Test di MMdetection eseguito su Windows+wsl in GPU mode:**
+
+![MMDetection test](video/MMDetection_test.gif)
 
 # 8. Estensioni del sistema
 
@@ -631,15 +624,12 @@ Come sviluppi futuri si individuano:
 
 # Appendice A — Repository e riferimenti
 
-| Progetto      | Repository                                |
-| ------------- | ----------------------------------------- |
-| AlphaPose     | `github.com/MVIG-SJTU/AlphaPose`          |
-| MMDetection   | `github.com/open-mmlab/mmdetection`       |
-| HybrIK        | `github.com/jeffffffli/HybrIK`            |
-| SAM3DBody     | `github.com/facebookresearch/sam-3d-body` |
-| SAM3DBody-cpp | `github.com/AmmarkoV/SAM3DBody-cpp`       |
-| VoxelPose     | `github.com/microsoft/voxelpose-pytorch`  |
-| MMHuman3D     | `github.com/open-mmlab/mmhuman3d`         |
+| Progetto      | Repository                          |
+| ------------- | ----------------------------------- |
+| AlphaPose     | `github.com/MVIG-SJTU/AlphaPose`    |
+| MMDetection   | `github.com/open-mmlab/mmdetection` |
+| HybrIK        | `github.com/jeffffffli/HybrIK`      |
+| SAM3DBody-cpp | `github.com/AmmarkoV/SAM3DBody-cpp` |
 
 ---
 
