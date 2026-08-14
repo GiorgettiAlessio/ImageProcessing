@@ -504,6 +504,19 @@ Di seguito i video dimostravivi dei test sulle tre metodologie:
 
 ![MMDetection test](video/MMDetection_test.gif)
 
+## 7.3 Limitazioni
+
+Come esplicitato dai video i risultati ottenuti dall'avatar Unity sono spesso solo delle approssimazioni delle pose reali catturate dalla webcam. Ci sono diversi motivi per il quale questo succede e sono distribuiti su tutta la pipeline del framework.
+
+Il primo motivo risiede nella difficoltà intrinseca di una webcam monoculare di stimare la posa univoca di una persona in 3 dimensioni, i modelli di SAM3DBody-cpp e HybrIK provano a risolvere le ambiguità tendendo a regredire la complessità tridimensionale di un movimento umano verso pose piu plausibili.
+Altre difficoltà dal punto di vista del campionamento immagine sono le eventuali occlusioni causate, sia da oggetti sulla scena, sia dallo stesso corpo umano che può nascondere arti o incrociarli rendendo più complesso il lavoro di pose estimation della rete neurale.
+
+Dal punto di vista dell'animazione dell'avatar Humanoid di Unity è importante considerare che lo scheletro SMPL e quello di SAM3DBody possiedono una gerarchia di ossa diversa da quello Humanoid, copiare dunque rotazioni tra due rig differenti può introdurre distorsioni nell'animazione. Altre distorsioni sono introdotte se la posa di riferimento del campionatore non coincide perfettamente con la posa di calibrazione dell'Humanoid Unity, le rotazioni locali verrebbero infatti riportate con un offset sistematico.
+
+Infine ci sono i vincoli di sitema real-time. Il framerate della pipeline di computer vision è molto piu basso del refresh di Unity il che costringe l'avatar a inseguire le pose con un ritardo non trascurabile.
+A causa del basso framerate del campionatore si verificano anche perdite di picchi di movimento, dovendo Unity interpretare pose distanti nel tempo se nel frattempo la persona ha eseguito un movimento rapido potrebbe non venire campionato e costringere Unity ad approssimarlo molto piu lentamente di quello reale.
+Inoltre si aggiunge lo smoothing che Unity effettua in automatico per compensare il rumore delle stime, questo approccio perde di fedeltà per concentrarsi sulla  stabilità dell'annimazione. 
+
 # 8. Estensioni del sistema
 
 Come indicato nell'abstract del progetto, sono state progettate due estensioni dell'architettura di base, orientate rispettivamente alla gestione di scene multi-persona e all'interazione fisica dell'avatar con l'ambiente.
