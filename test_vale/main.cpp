@@ -1,8 +1,7 @@
 //-------------------------- RINOMINARE IN main.cpp E RICOMPILARE----------------------
 //cd build
-//cmake ..
-//make -j$(nproc)
-//./build/fast_sam_3dbody_run --onnx-dir ./onnx --gguf ./onnx/pipeline.gguf --yolo ./onnx/yolo.onnx --from 1 --udp-ip 127.0.0.1 --udp-port 5065
+//OMP_NUM_THREADS=8 ./fast_sam_3dbody_run --onnx-dir ../onnx --gguf ../onnx/pipeline.gguf --yolo ../onnx/yolo.onnx --backbone ../onnx/backbone_int8_dynamic.onnx --cuda -1 --from 0 --detector libreyolo --thresh 0.25
+
 #include "fast_sam_3dbody.h"
 #include "bvh_writer.h"
 #include "cli_common.h"
@@ -197,7 +196,7 @@ static std::vector<std::string> load_bvh_joint_names(const std::string& template
 {
     std::vector<std::string> names;
     std::ifstream f(template_path);
-    if (!f.is_open()) f.open("./body_mhr.bvh");
+    if (!f.is_open()) f.open("../body_mhr.bvh");
     if (!f.is_open()) return names;
 
     std::string line;
