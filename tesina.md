@@ -498,11 +498,11 @@ Di seguito i video dimostravivi dei test sulle tre metodologie:
 
 **Test di SAM3DBody-cpp eseguito su Linux in CPU mode:**
 
-![Sam test](video/Sam_test.gif)
+![Sam test](project_files/video/Sam_test.gif)
 
 **Test di MMdetection eseguito su Windows+wsl in GPU mode:**
 
-![MMDetection test](video/MMDetection_test.gif)
+![MMDetection test](project_files/video/MMDetection_test.gif)
 
 ## 7.3 Limitazioni
 
