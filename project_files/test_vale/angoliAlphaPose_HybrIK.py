@@ -1,4 +1,3 @@
-
 #comnfigurazione per mac di Vale
 """
 cd "/Users/valentina/POLI/magistrale/1 anno/image processing/Tesina" \
@@ -270,63 +269,46 @@ def to_scalar(x, default):
         return default
  
  
-def rotation_matrix_to_euler_xyz(rot):
+from scipy.spatial.transform import Rotation as R
+
+
+def rotmats_to_quat_dict(theta_mats):
     """
-    Converte matrici di rotazione 3x3 in Euler XYZ (compatibile CPU/GPU).
+    Converte una batch di matrici di rotazione 3x3 (24, 3, 3) in un
+    dizionario {nome_giunto: {x,y,z,w}} di QUATERNIONI veri e unitari.
+
+    Stessa identica logica dello script MMDetection+HybrIK
+    (rotmats_to_quat_dict), che AvatarController.cs si aspetta di
+    ricevere per ogni giunto (vedi il commento "Python manda
+    QUATERNION x,y,z,w" nella classe JointData). Prima questa
+    funzione produceva angoli di Eulero (x,y,z, SENZA w): il campo
+    w mancante veniva letto come 0 da Unity, e new Quaternion(x,y,z,0)
+    con x,y,z in GRADI non è affatto la stessa rotazione — da qui gli
+    arti storti e la spina dorsale "esplosa".
     """
-    r20 = torch.clamp(rot[..., 2, 0], -1.0, 1.0)
- 
-    sy = torch.sqrt(
-        torch.clamp(
-            rot[..., 0, 0] * rot[..., 0, 0]
-            + rot[..., 1, 0] * rot[..., 1, 0],
-            min=1e-12,
-        )
-    )
- 
-    singular = sy < 1e-6
- 
-    x = torch.atan2(rot[..., 2, 1], rot[..., 2, 2])
-    y = torch.atan2(-r20, sy)
-    z = torch.atan2(rot[..., 1, 0], rot[..., 0, 0])
- 
-    x_singular = torch.atan2(-rot[..., 1, 2], rot[..., 1, 1])
-    z_singular = torch.zeros_like(z)
- 
-    x = torch.where(singular, x_singular, x)
-    z = torch.where(singular, z_singular, z)
- 
-    euler = torch.stack((x, y, z), dim=-1)
-    euler = torch.rad2deg(euler)
- 
-    euler = euler.clone()
-    euler[..., 1] = -euler[..., 1]
-    euler[..., 2] = -euler[..., 2]
- 
-    return euler
- 
- 
-def rotations_to_unity_dict(euler_cpu):
     unity_rotations = {}
- 
-    if euler_cpu is None:
+
+    if theta_mats is None:
         return unity_rotations
- 
+
+    if torch.is_tensor(theta_mats):
+        theta_mats = theta_mats.detach().cpu().numpy()
+
+    r = R.from_matrix(theta_mats)
+    quats = r.as_quat()  # (N, 4) -> x, y, z, w
+
     for i, joint_name in enumerate(SMPL_JOINTS):
-        if i >= len(euler_cpu):
+        if i >= quats.shape[0]:
             break
- 
-        try:
-            x, y, z = euler_cpu[i]
- 
-            unity_rotations[joint_name] = {
-                "x": round(float(x), 2),
-                "y": round(float(y), 2),
-                "z": round(float(z), 2),
-            }
-        except (TypeError, ValueError, IndexError):
-            continue
- 
+
+        x, y, z, w = quats[i]
+        unity_rotations[joint_name] = {
+            "x": float(x),
+            "y": float(y),
+            "z": float(z),
+            "w": float(w),
+        }
+
     return unity_rotations
  
  
@@ -518,10 +500,6 @@ def main():
                 ) = extract_output(output)
  
                 pred_rotations = prepare_rotations(pred_rotations)
-                unity_euler_all = None
- 
-                if pred_rotations is not None:
-                    unity_euler_all = rotation_matrix_to_euler_xyz(pred_rotations)
  
                 scores_cpu = (
                     scores.detach().cpu().tolist()
@@ -538,15 +516,9 @@ def main():
                     )
  
                     unity_degrees = {}
-                    if unity_euler_all is not None and k < unity_euler_all.shape[0]:
-                        euler_cpu = (
-                            unity_euler_all[k]
-                            .detach()
-                            .float()
-                            .cpu()
-                            .tolist()
-                        )
-                        unity_degrees = rotations_to_unity_dict(euler_cpu)
+                    if pred_rotations is not None and k < pred_rotations.shape[0]:
+                        mats_k = pred_rotations[k].detach().float().cpu().numpy()
+                        unity_degrees = rotmats_to_quat_dict(mats_k)
  
                     xyz_list = []
                     if pred_xyz is not None and k < pred_xyz.shape[0]:
