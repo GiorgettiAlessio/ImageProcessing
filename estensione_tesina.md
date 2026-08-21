@@ -243,7 +243,7 @@ così da poter passare risoluzioni ridotte (`--size 320 240`) e alleggerire real
 
 # 14. Scenario B — AlphaPose + HybrIK: adattamento per Mac Intel CPU
 
-Lo script di partenza (`angoliAlphaPose_HybrIK.py`, versione Linux) implementa una pipeline realtime che cattura il flusso webcam, rileva le persone con un detector YOLO (AlphaPose), stima la posa 3D SMPL con HybrIK (24 giunti, rotazioni + coordinate 3D), converte le rotazioni in angoli utilizzabili da Unity e invia i dati via UDP, mostrando opzionalmente una finestra con lo scheletro sovrapposto al video. Era scritto assumendo un ambiente **Linux con GPU NVIDIA/CUDA** obbligatoria: legge la GPU con `torch.cuda.get_device_name(...)` senza alcun ramo alternativo, usa `torch.autocast(device_type="cuda", ...)` per l'inferenza in FP16, e si appoggia a componenti di AlphaPose (cattura webcam multithread, NMS) dipendenti da estensioni compilate nativamente per quella piattaforma.
+Lo script di partenza (`angoliAlphaPose_HybrIK.py`, versione Linux) implementa una pipeline realtime che cattura il flusso webcam, rileva la persona con un detector YOLO (AlphaPose), stima la posa 3D SMPL con HybrIK (24 giunti, rotazioni + coordinate 3D), converte le matrici di rotazione direttamente in **quaternioni `(x, y, z, w)`** e invia i dati via UDP, mostrando opzionalmente una finestra con lo scheletro sovrapposto al video. Era scritto assumendo un ambiente **Linux con GPU NVIDIA/CUDA** obbligatoria: legge la GPU con `torch.cuda.get_device_name(...)` senza alcun ramo alternativo, usa `torch.autocast(device_type="cuda", ...)` per l'inferenza in FP16, e si appoggia a componenti di AlphaPose (cattura webcam multithread, NMS) dipendenti da estensioni compilate nativamente per quella piattaforma.
 
 Il lavoro si è svolto in due fasi distinte: prima l'**installazione e configurazione dell'ambiente** (questo capitolo, §14.1-14.4), poi il **debugging a runtime** una volta che lo script era finalmente eseguibile ma presentava ancora comportamenti scorretti (§14.5-14.8). In entrambe le fasi il porting è stato incrementale: a ogni tentativo di esecuzione lo script falliva su un problema diverso; ogni errore è stato isolato con test minimi mirati, corretto, e si passava a quello successivo — un approccio "a strati" necessario perché i problemi appartenevano a categorie molto diverse (compatibilità di sistema operativo, differenze di firma fra versioni di libreria, dipendenze binarie mancanti, bug di logica).
 
@@ -281,13 +281,17 @@ if hasattr(pose_model, 'smpl') and hasattr(pose_model.smpl, 'shapedirs'):
         pose_model.smpl.shapedirs = pose_model.smpl.shapedirs[:, :, :10]
 ```
 
-## 14.6 La finestra della webcam non appariva mai
+## 14.6 Cattura webcam e separazione fra acquisizione e inferenza
 
-**Sintomo:** lo script catturava correttamente il video e inviava i pacchetti UDP, ma la finestra `cv2.imshow` non compariva mai, senza errori e senza consumo di CPU.
+**Sintomo iniziale:** la versione basata direttamente su `WebCamDetectionLoader` poteva non mostrare correttamente la finestra della webcam su macOS, perché il loader di AlphaPose eseguiva la cattura in un thread secondario. Con AVFoundation questo può bloccare `VideoCapture.read()` in assenza del run loop del thread principale.
 
-**Causa:** `WebCamDetectionLoader` di AlphaPose cattura i frame webcam in un `threading.Thread` separato, anche in modalità `--sp` (single process). Su Linux questo funziona senza problemi; su **macOS**, il backend di cattura video di OpenCV (AVFoundation) richiede che la cattura avvenga nel *thread principale*, dove gira il run loop di sistema (Cocoa). Se la cattura viene avviata da un thread secondario, `stream.read()` può bloccarsi indefinitamente senza generare eccezioni.
+**Prima correzione:** la cattura è stata quindi separata dalla pipeline di inferenza. Lo script finale non utilizza più `WebCamDetectionLoader`: `cv2.VideoCapture` resta nel **thread principale**, che si occupa esclusivamente di acquisire i frame e gestire `imshow`. Il thread di inferenza riceve invece una copia dell'ultimo frame disponibile e si occupa di detection, preprocessing e HybrIK.
 
-**Soluzione:** sostituzione di `WebCamDetectionLoader` con una classe equivalente (`SyncWebcamLoader`), che replica la stessa logica (stesso detector, stessa trasformazione crop/resize per HybrIK) ma esegue cattura, detection e preprocessing **in modo sincrono nel thread principale**, eliminando il thread di cattura.
+La scelta è importante anche dal punto di vista delle prestazioni: non viene mantenuta una coda di frame da elaborare. Il thread di inferenza lavora sempre sull'**ultimo frame disponibile** e scarta implicitamente quelli diventati obsoleti mentre la CPU era occupata dall'inferenza. In questo modo la lentezza della rete non fa crescere indefinitamente la latenza percepita.
+
+Lo scambio fra i due thread è protetto da un `Lock`; un secondo lock protegge invece l'ultimo frame pronto per la visualizzazione. Se l'inferenza è più lenta della webcam, `cv2.imshow` continua quindi a ricevere il frame più recente disponibile senza aspettare la conclusione di HybrIK.
+
+La cattura è inoltre parametrizzabile tramite `--webcam`, `--cam-width` e `--cam-height`; la configurazione utilizzata per il Mac Intel imposta di default **640×480**, riducendo il lavoro del detector rispetto a risoluzioni più elevate.
 
 ## 14.7 Altri bug di runtime
 
@@ -298,9 +302,23 @@ if hasattr(pose_model, 'smpl') and hasattr(pose_model.smpl, 'shapedirs'):
 - **Colori invertiti (RGB/BGR)**: `SyncWebcamLoader` converte il frame da BGR a RGB per coerenza con la pipeline AlphaPose, ma `cv2.imshow` si aspetta BGR — risolto con `cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR)` prima della visualizzazione.
 - **Scala errata nella visualizzazione dello scheletro**: `pred_xyz_jts_29` è espresso in coordinate 3D metriche root-relative, senza un fattore di conversione fisso e ovvio verso i pixel dell'immagine. Risolto calcolando dinamicamente, frame per frame, un fattore di scala (90° percentile delle distanze dei giunti dal bacino, mappato su ~45% dell'altezza in pixel del bounding box rilevato).
 
-## 14.8 Prestazioni su CPU
+## 14.8 Correzione delle rotazioni e prestazioni su CPU
 
-Senza GPU, l'intera pipeline (detection YOLO + regressione HybrIK) gira su CPU, con un costo per frame significativamente più alto rispetto a CUDA. Ottimizzazioni applicate: `torch.set_num_threads(os.cpu_count())` (per default, in alcuni ambienti virtuali, PyTorch ne usa solo uno); riduzione della risoluzione di cattura webcam (640×480); parametro opzionale `--det-every-n`, che esegue la detection YOLO solo ogni N frame riusando l'ultimo bounding box, mentre HybrIK continua a girare su ogni frame.
+Durante il testing è emersa un'incongruenza nella rappresentazione delle rotazioni. Una versione intermedia dello script trasformava le matrici `3×3` di HybrIK in angoli di Eulero `(x, y, z)` e li inseriva nel pacchetto UDP. Questa rappresentazione non era coerente con il provider Unity utilizzato dagli Scenari B e C, che si aspetta **quaternioni `(x, y, z, w)`**. In particolare, trattare tre angoli come le prime tre componenti di un quaternion, omettendo `w`, porta a orientamenti completamente diversi da quelli desiderati.
+
+La correzione adottata è stata mantenere le matrici di rotazione di HybrIK fino alla conversione finale e utilizzare direttamente `scipy.spatial.transform.Rotation.from_matrix(...).as_quat()`. Per ogni giunto vengono quindi trasmessi i quattro componenti `x`, `y`, `z`, `w` del quaternion unitario, senza passare per gli angoli di Eulero. Il nome storico del campo JSON `unity_rotations_deg` viene mantenuto per compatibilità con il protocollo esistente, ma per gli Scenari B e C il suo contenuto è quaternionico.
+
+Sul **Mac Intel**, l'intera pipeline viene eseguita su CPU quando CUDA non è disponibile e FP16/AMP viene disabilitato. Il costo computazionale resta quindi elevato; per rendere il sistema utilizzabile durante il test sono state introdotte ottimizzazioni mirate:
+
+1. **Inferenza su thread separato:** il thread principale resta dedicato a `cv2.read()` e `cv2.imshow`, mentre il thread di inferenza elabora l'ultimo frame disponibile. I frame intermedi non vengono accodati.
+2. **Detection sotto-campionata:** YOLO viene eseguito ogni `--det-interval` frame, con valore predefinito **8**. Nei frame intermedi viene riutilizzato l'ultimo bounding box.
+3. **Smoothing del bounding box:** fra due detection viene applicato uno smoothing esponenziale con `--bbox-smoothing`, predefinito **0.25**, per ridurre oscillazioni del crop senza introdurre una coda di frame.
+4. **Una sola persona:** viene mantenuta la detection con score più alto, coerentemente con la presenza di un singolo avatar Unity. Questo evita elaborazioni inutili per persone aggiuntive.
+5. **Parallelismo CPU esplicito:** `torch.set_num_threads()` viene impostato a `--num-threads`; con valore `0` vengono utilizzati tutti i core disponibili.
+6. **Risoluzione controllata:** la webcam viene configurata a **640×480** per ridurre il costo della detection.
+7. **Profilazione opzionale:** `--profile` misura separatamente detection, transform, HybrIK, invio UDP, visualizzazione e tempo totale, permettendo di individuare il vero collo di bottiglia invece di attribuirlo genericamente alla webcam.
+
+L'effetto complessivo è diverso da un aumento del framerate reale della rete: la CPU continua a determinare la velocità massima di inferenza, ma la pipeline evita che il ritardo si trasformi in una coda di frame arretrati. L'output UDP viene quindi prodotto al ritmo massimo sostenibile dall'elaborazione, mentre la cattura e la finestra di visualizzazione rimangono reattive.
 
 ## 14.9 Sintesi delle differenze Linux/CUDA → macOS Intel CPU, Scenario B
 
@@ -308,12 +326,15 @@ Senza GPU, l'intera pipeline (detection YOLO + regressione HybrIK) gira su CPU, 
 |---|---|---|
 | Ambiente Python | non gestito a parte | venv (non Conda) con Python 3.10, dopo tentativi falliti con Conda e Python 3.13 |
 | Build estensioni native | `setup.py` compila estensioni CUDA (incl. NMS) | `setup.py` riscritto: nessuna estensione CUDA, solo `soft_nms_cpu` via Cython |
-| Cattura webcam | thread separato (`WebCamDetectionLoader`) | sincrona nel thread principale (`SyncWebcamLoader`) per compatibilità AVFoundation |
+| Cattura webcam | thread separato (`WebCamDetectionLoader`) | `cv2.VideoCapture` nel thread principale; inferenza in thread separato, con ultimo frame condiviso |
 | Device | CUDA obbligatoria, nessun fallback | rilevamento automatico CUDA/CPU, `args.gpus` normalizzato in entrambi i casi |
-| Precisione | FP16/AMP su GPU | disabilitata (priva di senso su CPU standard) |
-| NMS a runtime | estensione compilata CUDA/CPU | fallback `torchvision.ops.nms`, dopo un primo fallback a cascata insufficiente |
+| Precisione | FP16/AMP su GPU | FP16/AMP disabilitato su CPU |
+| NMS a runtime | estensione compilata CUDA/CPU | fallback `torchvision.ops.nms` |
+| Rotazioni | conversione intermedia in Eulero nella versione intermedia | matrici SMPL → quaternioni unitari `(x,y,z,w)` direttamente con SciPy |
 | Modello SMPL | checkpoint e config coerenti per costruzione | allineamento manuale (backbone HRNet/ResNet, troncamento `shapedirs` 300→10) |
-| Prestazioni | accelerazione hardware GPU | multi-threading CPU esplicito, risoluzione ridotta, detection sotto-campionata opzionale |
+| Detection | a ogni frame | ogni 8 frame di default + smoothing bbox + una sola persona |
+| Webcam | risoluzione non vincolata | 640×480 di default, configurabile |
+| Prestazioni | accelerazione hardware GPU | thread separato per inferenza, ultimo-frame-only, multi-threading CPU e profilazione per stage |
 
 ---
 

@@ -224,7 +224,7 @@ HybrIK completa la pipeline ricostruendo lo scheletro 3D parametrico **SMPL**.
 
 Il modello utilizza la cinematica inversa per ottenere le rotazioni articolari coerenti con la configurazione tridimensionale del corpo.
 
-Nel progetto vengono utilizzate le matrici di rotazione relative ai **24 giunti SMPL**, successivamente convertite in quaternioni e organizzate per nome di giunto.
+Nel progetto vengono utilizzate le matrici di rotazione relative ai **24 giunti SMPL**, convertite direttamente in quaternioni unitari `(x, y, z, w)` e organizzate per nome di giunto. La conversione diretta evita una rappresentazione intermedia in angoli di Eulero e mantiene esplicitamente la quarta componente `w`, necessaria per rappresentare correttamente l'orientamento in Unity.
 
 Il vantaggio principale dello Scenario B è la possibilità di combinare un sistema di detection e pose estimation consolidato come AlphaPose con un modello di Human Mesh Recovery come HybrIK.
 
@@ -316,8 +316,8 @@ Tutte e tre le pipeline condividono lo stesso schema di pacchetto, così da rend
   "person_id": 0,
   "timestamp": 1784979327.127,
   "unity_rotations_deg": {
-    "Pelvis": { "x": -41.53, "y": 12.16, "z": 6.11 },
-    "L_Elbow": { "x": 15.69, "y": -2.61, "z": -156.23 }
+    "Pelvis": { "x": 0.12, "y": -0.08, "z": 0.31, "w": 0.94 },
+    "L_Elbow": { "x": 0.05, "y": 0.21, "z": -0.12, "w": 0.96 }
   },
   "joint_xyz_3d": [0.0, 0.0, 0.0, 0.035, -0.007, 0.015],
   "root_position": {
@@ -332,7 +332,7 @@ Tutte e tre le pipeline condividono lo stesso schema di pacchetto, così da rend
 
 - **`person_id`**: identificativo assegnato dal tracciamento, permette di associare ogni pacchetto all'avatar corretto in scenari multi-persona.
 - **`timestamp`**: istante in cui il frame è stato elaborato dal modello.
-- **`unity_rotations_deg`**: rotazione locale di ciascun giunto dello scheletro, utilizzata per muovere l'avatar.
+- **`unity_rotations_deg`**: campo mantenuto per compatibilità con il protocollo esistente; per le pipeline HybrIK contiene il quaternion locale di ciascun giunto nel formato `x,y,z,w`, utilizzato per muovere l'avatar.
 - **`joint_xyz_3d`**: posizioni relative dei giunti nello spazio 3D, utili per debug, visualizzazione o approcci alternativi.
 - **`root_position`**: posizione della radice dello scheletro rispetto alla telecamera, utilizzata per traslare l'intero avatar nella scena.
 
@@ -433,10 +433,13 @@ foreach (var item in motionData.unity_rotations_deg)
         out Transform boneTransform))
     {
         Quaternion targetRotation =
-            Quaternion.Euler(
-                item.Value.x,
-                item.Value.y,
-                item.Value.z
+            Quaternion.Normalize(
+                new Quaternion(
+                    item.Value.x,
+                    item.Value.y,
+                    item.Value.z,
+                    item.Value.w
+                )
             );
 
         boneTransform.localRotation =
@@ -448,6 +451,8 @@ foreach (var item in motionData.unity_rotations_deg)
     }
 }
 ```
+
+Per gli Scenari B e C il campo `unity_rotations_deg` mantiene questo nome per compatibilità con lo schema JSON storico, ma i valori contenuti non sono più angoli in gradi: sono quaternioni unitari `(x, y, z, w)`. Il quarto componente `w` non può essere omesso: trattare i tre valori `x`, `y` e `z` di un quaternion come angoli di Eulero, o come un quaternion privo di `w`, produce orientamenti errati dei giunti.
 
 Il campo `root_position` viene invece applicato tramite una `Vector3.Lerp` sulla posizione locale dell'osso `Hips`, così da traslare l'intero avatar nello spazio in base alla distanza stimata dalla telecamera.
 
@@ -494,11 +499,27 @@ La verifica ha permesso di controllare che, a parità di formato di pacchetto, l
 
 Questo conferma la bontà della scelta di utilizzare uno **schema JSON condiviso** tra le diverse implementazioni.
 
+### 7.2.1 Correzione del retargeting delle rotazioni
+
+Durante il testing della pipeline **AlphaPose + HybrIK** è emersa un'incongruenza nell'applicazione delle rotazioni al modello Humanoid di Unity. La struttura generale del retargeting non è stata riscritta: il progetto utilizzava già, anche nelle altre pipeline, una fase di calibrazione, il calcolo del delta rispetto alla posa iniziale, l'applicazione della bind pose e lo smoothing delle rotazioni.
+
+La correzione ha riguardato invece il modo in cui le rotazioni prodotte da HybrIK vengono interpretate dal rig utilizzato in Unity. HybrIK restituisce le rotazioni dei 24 giunti SMPL sotto forma di matrici \(3\times3\), che vengono convertite direttamente in quaternioni e trasmesse nel formato `x,y,z,w`. Nel controller Unity di AlphaPose il quaternion ricevuto viene quindi utilizzato direttamente, evitando una conversione intermedia in angoli di Eulero.
+
+Il problema riscontrato durante il testing non era quindi la semplice conversione matrice-quaternion, ma il diverso sistema di riferimento tra le rotazioni dello scheletro prodotto da HybrIK e gli assi locali del rig Humanoid di Unity. Per questo motivo sono state introdotte correzioni specifiche del retargeting per alcuni giunti, con una trasformazione delle componenti del quaternion differenziata rispetto alla conversione generale. È stata inoltre introdotta una correzione dell'orientamento della root/Pelvis per compensare il disallineamento globale degli assi.
+
+La calibrazione consente di utilizzare la posa iniziale come riferimento. Per ogni giunto viene calcolato il delta tra la rotazione corrente e quella acquisita durante la calibrazione e tale delta viene applicato alla rotazione di bind dell'osso Unity. In questo modo la posa iniziale dell'utente non viene trasferita come una rotazione assoluta dell'avatar, ma viene utilizzata per definire il riferimento rispetto al quale vengono applicati i movimenti successivi.
+
+È importante distinguere questa correzione dalle funzionalità generali già presenti nel progetto. Il controller utilizzato per **MMDetection + HybrIK** riceve anch'esso direttamente quaternioni `x,y,z,w` e applica calibrazione, delta rispetto alla calibrazione, bind pose e smoothing, ma non utilizza le correzioni specifiche degli assi introdotte nel controller AlphaPose. Il controller di **SAM3DBody-cpp**, invece, riceve nel testing le rotazioni nel formato previsto dalla propria pipeline e le converte lato Unity tramite `Quaternion.Euler(...)`. Le modifiche descritte in questa sezione sono quindi da considerarsi specifiche della fase di retargeting della pipeline AlphaPose + HybrIK e non una riscrittura generale del sistema di animazione Unity.
+
 Di seguito i video dimostravivi dei test sulle tre metodologie:
 
 **Test di SAM3DBody-cpp eseguito su Linux in CPU mode:**
 
 ![Sam test](project_files/video/Sam_test.gif)
+
+**Test di Alphapose eseguito su MacOs in CPU mode:**
+
+![Alphapose test](project_files/video/Alphapose_test.gif)
 
 **Test di MMdetection eseguito su Windows+wsl in GPU mode:**
 
@@ -627,7 +648,6 @@ Il protocollo UDP con payload JSON condiviso tra le diverse sorgenti si è dimos
 Come sviluppi futuri si individuano:
 
 - introduzione di un filtro temporale per ridurre ulteriormente il jitter;
-- supporto nativo ai quaternioni end-to-end;
 - gestione più robusta delle occlusioni;
 - supporto multi-persona;
 - interazione fisica con gli oggetti;

@@ -1,4 +1,3 @@
-
 """
 python /home/alessio/Desktop/progettoImage/ImageProcessing/angoliAlphaPose_HybrIK.py \
   --cfg configs/smpl/256x192_adam_lr1e-3-res34_smpl_24_3d_base_2x_mix.yaml \
@@ -38,6 +37,7 @@ from alphapose.models import builder
 from alphapose.utils.config import update_config
 from alphapose.utils.webcam_detector import WebCamDetectionLoader
 from detector.apis import get_detector
+from scipy.spatial.transform import Rotation as R
 
 
 SMPL_JOINTS = [
@@ -50,7 +50,7 @@ SMPL_JOINTS = [
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Realtime HybrIK Pose & Unity Euler Angles Output - GPU optimized"
+        description="Realtime HybrIK Pose & Unity Quaternion Output - GPU optimized"
     )
 
     parser.add_argument("--cfg", type=str, required=True)
@@ -133,83 +133,45 @@ def to_scalar(x, default):
         return default
 
 
-def rotation_matrix_to_euler_xyz_gpu(rot):
+def rotmats_to_quat_dict(theta_mats):
     """
-    Converte matrici di rotazione 3x3 in Euler XYZ direttamente su GPU.
+    Converte le matrici di rotazione 3x3 dei 24 giunti SMPL in
+    quaternioni unitari nel formato x, y, z, w atteso da Unity.
 
-    Input:
-        (..., 3, 3)
-
-    Output:
-        (..., 3), gradi
-
-    Convenzione:
-        SMPL/HybrIK Right-Handed -> Unity Left-Handed
-        Y e Z vengono invertiti come nello script originale.
+    La conversione viene eseguita direttamente dalla matrice di rotazione
+    tramite scipy.spatial.transform.Rotation, evitando la conversione
+    intermedia in angoli di Eulero. Questa scelta evita ambiguita' dovute
+    all'ordine degli assi, al gimbal lock e all'interpretazione dei valori
+    x/y/z come componenti di un quaternion.
     """
-
-    # Clamp per evitare piccoli errori numerici vicino a +/-1.
-    r20 = torch.clamp(rot[..., 2, 0], -1.0, 1.0)
-
-    sy = torch.sqrt(
-        torch.clamp(
-            rot[..., 0, 0] * rot[..., 0, 0]
-            + rot[..., 1, 0] * rot[..., 1, 0],
-            min=1e-12,
-        )
-    )
-
-    singular = sy < 1e-6
-
-    x = torch.atan2(rot[..., 2, 1], rot[..., 2, 2])
-    y = torch.atan2(-r20, sy)
-    z = torch.atan2(rot[..., 1, 0], rot[..., 0, 0])
-
-    # Gimbal-lock / caso singolare.
-    x_singular = torch.atan2(-rot[..., 1, 2], rot[..., 1, 1])
-    z_singular = torch.zeros_like(z)
-
-    x = torch.where(singular, x_singular, x)
-    z = torch.where(singular, z_singular, z)
-
-    euler = torch.stack((x, y, z), dim=-1)
-
-    # Radianti -> gradi
-    euler = torch.rad2deg(euler)
-
-    # SMPL Right-Handed -> Unity Left-Handed
-    euler = euler.clone()
-    euler[..., 1] = -euler[..., 1]
-    euler[..., 2] = -euler[..., 2]
-
-    return euler
-
-
-def rotations_to_unity_dict(euler_cpu):
-    """
-    Converte un array/lista CPU di Euler (24,3) nel dizionario
-    utilizzato dal protocollo UDP originale.
-    """
-
     unity_rotations = {}
 
-    if euler_cpu is None:
+    if theta_mats is None:
         return unity_rotations
 
+    if torch.is_tensor(theta_mats):
+        theta_mats = theta_mats.detach().float().cpu().numpy()
+
+    theta_mats = np.asarray(theta_mats)
+    if theta_mats.ndim != 3 or theta_mats.shape[1:] != (3, 3):
+        raise RuntimeError(
+            f"Matrici di rotazione inattese: shape={theta_mats.shape}; "
+            "atteso (N,3,3)"
+        )
+
+    quats = R.from_matrix(theta_mats).as_quat()  # x, y, z, w
+
     for i, joint_name in enumerate(SMPL_JOINTS):
-        if i >= len(euler_cpu):
+        if i >= quats.shape[0]:
             break
 
-        try:
-            x, y, z = euler_cpu[i]
-
-            unity_rotations[joint_name] = {
-                "x": round(float(x), 2),
-                "y": round(float(y), 2),
-                "z": round(float(z), 2),
-            }
-        except (TypeError, ValueError, IndexError):
-            continue
+        x, y, z, w = quats[i]
+        unity_rotations[joint_name] = {
+            "x": float(x),
+            "y": float(y),
+            "z": float(z),
+            "w": float(w),
+        }
 
     return unity_rotations
 
@@ -466,16 +428,9 @@ def main():
                 ) = extract_output(output)
 
                 # -----------------------------------------------------------
-                # Rotazioni: TUTTO GPU
+                # Rotazioni: matrici SMPL -> quaternioni x,y,z,w
                 # -----------------------------------------------------------
                 pred_rotations = prepare_rotations(pred_rotations)
-
-                unity_euler_all = None
-
-                if pred_rotations is not None:
-                    unity_euler_all = rotation_matrix_to_euler_xyz_gpu(
-                        pred_rotations
-                    )
 
                 # -----------------------------------------------------------
                 # Trasferimenti CPU minimizzati
@@ -498,25 +453,13 @@ def main():
                     )
 
                     # -------------------------------------------------------
-                    # Euler già calcolati in batch sulla GPU
+                    # Rotazioni: conversione diretta matrice -> quaternion
                     # -------------------------------------------------------
-                    unity_degrees = {}
+                    unity_rotations = {}
 
-                    if (
-                        unity_euler_all is not None
-                        and k < unity_euler_all.shape[0]
-                    ):
-                        euler_cpu = (
-                            unity_euler_all[k]
-                            .detach()
-                            .float()
-                            .cpu()
-                            .tolist()
-                        )
-
-                        unity_degrees = rotations_to_unity_dict(
-                            euler_cpu
-                        )
+                    if pred_rotations is not None and k < pred_rotations.shape[0]:
+                        mats_k = pred_rotations[k].detach().float().cpu().numpy()
+                        unity_rotations = rotmats_to_quat_dict(mats_k)
 
                     # -------------------------------------------------------
                     # XYZ 3D
@@ -554,7 +497,7 @@ def main():
                     packet = {
                         "person_id": person_id,
                         "timestamp": time.time(),
-                        "unity_rotations_deg": unity_degrees,
+                        "unity_rotations_deg": unity_rotations,
                         "joint_xyz_3d": xyz_list,
                         "root_position": root_position_unity,
                     }
@@ -580,38 +523,38 @@ def main():
                     # -------------------------------------------------------
                     # Debug rotazioni
                     # -------------------------------------------------------
-                    if unity_degrees and not args.no_stdout:
+                    if unity_rotations and not args.no_stdout:
                         print(
                             f"\n=== [PERSONA {person_id}] "
-                            "ROTAZIONI UNITY (Gradi) ==="
+                            "ROTAZIONI UNITY (Quaternion x,y,z,w) ==="
                         )
 
-                        if "L_Elbow" in unity_degrees:
-                            r = unity_degrees["L_Elbow"]
+                        if "L_Elbow" in unity_rotations:
+                            r = unity_rotations["L_Elbow"]
                             print(
                                 f"Braccio SX (L_Elbow): "
-                                f"X:{r['x']}° Y:{r['y']}° Z:{r['z']}°"
+                                f"x:{r['x']:.4f} y:{r['y']:.4f} z:{r['z']:.4f} w:{r['w']:.4f}"
                             )
 
-                        if "R_Elbow" in unity_degrees:
-                            r = unity_degrees["R_Elbow"]
+                        if "R_Elbow" in unity_rotations:
+                            r = unity_rotations["R_Elbow"]
                             print(
                                 f"Braccio DX (R_Elbow): "
-                                f"X:{r['x']}° Y:{r['y']}° Z:{r['z']}°"
+                                f"x:{r['x']:.4f} y:{r['y']:.4f} z:{r['z']:.4f} w:{r['w']:.4f}"
                             )
 
-                        if "L_Knee" in unity_degrees:
-                            r = unity_degrees["L_Knee"]
+                        if "L_Knee" in unity_rotations:
+                            r = unity_rotations["L_Knee"]
                             print(
                                 f"Ginocchio SX (L_Knee): "
-                                f"X:{r['x']}° Y:{r['y']}° Z:{r['z']}°"
+                                f"x:{r['x']:.4f} y:{r['y']:.4f} z:{r['z']:.4f} w:{r['w']:.4f}"
                             )
 
-                        if "R_Knee" in unity_degrees:
-                            r = unity_degrees["R_Knee"]
+                        if "R_Knee" in unity_rotations:
+                            r = unity_rotations["R_Knee"]
                             print(
                                 f"Ginocchio DX (R_Knee): "
-                                f"X:{r['x']}° Y:{r['y']}° Z:{r['z']}°"
+                                f"x:{r['x']:.4f} y:{r['y']:.4f} z:{r['z']:.4f} w:{r['w']:.4f}"
                             )
 
                         print("=" * 50)
