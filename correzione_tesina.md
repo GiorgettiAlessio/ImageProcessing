@@ -4,10 +4,12 @@
 
 Facendo altri test su tutti e tre i modelli, abbiamo notato che nella pipeline MMDetection + HybrIK l'anca era già sbloccata di base, ma il movimento non (spostamenti poco controllati, gambe rigide e che con movimenti non corretti). Le sezioni seguenti descrivono le modifiche fatte per affinarlo.
 
-Test MMDetection + HybrIK iniziale
+**Test MMDetection + HybrIK iniziale:**
+
 ![MMDetection test pre](project_files/video/MMDetection_hip_pre.gif)
 
-Test MMDetection + HybrIK finale (dopo le correizioni)
+**Test MMDetection + HybrIK finale (dopo le correizioni):**
+
 ![MMDetection test pre](project_files/video/MMDetection_hip_fix.gif)
 
 ## 1. Mirroring L/R sulle gambe
