@@ -1,20 +1,21 @@
 # Estensione della Tesina
 
-## Porting e unificazione delle tre pipeline (SAM3DBody-cpp, AlphaPose+HybrIK, MMDetection+HybrIK) su un'unica macchina macOS Intel
+## Porting e unificazione delle tre pipeline su un'unica macchina macOS Intel
 
-*Capitoli aggiuntivi rispetto alla tesina principale*
+*Capitoli aggiuntivi rispetto alla tesina principale.*
+*Documento istruttivo all'installazione dei modelli su una macchina MacOs Intel.*
 
 ---
 
 # 10. Perché un'unica macchina: dal confronto teorico al testing simultaneo
 
-Nella tesina principale i tre scenari — **A** (SAM3DBody-cpp), **B** (AlphaPose + HybrIK) e **C** (MMDetection + HybrIK) — sono presentati e confrontati sul piano architetturale (capitolo 3) e implementativo (capitolo 4), come tre alternative equivalenti per la stima della posa. Nella pratica, però, erano nati in condizioni tutt'altro che equivalenti: gli script Python di AlphaPose e di MMDetection erano stati scritti da upersone separate assumendo **Linux con GPU NVIDIA/CUDA obbligatoria**; il motore C++ di SAM3DBody-cpp era stato pensato a sua volta per l'accelerazione CUDA, con `--cuda DEVICE` come parametro di default. Ogni scenario, insomma, poteva essere mostrato **solo separatamente**, sulla macchina o sull'ambiente in cui era stato originariamente sviluppato da chi se n'era occupato.
+Nella tesina principale i tre scenari, **A** (SAM3DBody-cpp), **B** (AlphaPose + HybrIK) e **C** (MMDetection + HybrIK), sono presentati e confrontati sul piano architetturale (capitolo 3) e implementativo (capitolo 4), come tre alternative equivalenti per la stima della posa. Nella pratica, però, erano nati in condizioni tutt'altro che equivalenti: gli script Python di AlphaPose e di MMDetection erano stati scritti da upersone separate assumendo **Linux con GPU NVIDIA/CUDA obbligatoria**; il motore C++ di SAM3DBody-cpp era stato pensato a sua volta per l'accelerazione CUDA, con `--cuda DEVICE` come parametro di default. Ogni scenario, insomma, poteva essere mostrato **solo separatamente**, sulla macchina o sull'ambiente in cui era stato originariamente sviluppato da chi se n'era occupato.
 
 Questa frammentazione rendeva impossibile un confronto diretto "alla pari" fra le tre pipeline e, soprattutto, impossibile una demo unica del progetto: per passare da uno scenario all'altro sarebbe stato necessario cambiare macchina, sistema operativo e, in pratica, persona.
 
 Da qui la decisione di tentare di portare **tutti e tre gli scenari sulla stessa macchina**, con un duplice obiettivo:
 
-1. verificare concretamente se fosse possibile costruire un **programma/launcher unico**, in grado di avviare a scelta uno qualsiasi dei tre modelli di detection/pose/mesh-recovery e di collegarlo allo **stesso progetto Unity** di destinazione, senza dover riconfigurare nulla manualmente a ogni cambio di pipeline (v. capitolo 16);
+1. verificare concretamente se fosse possibile costruire un **programma/launcher unico**, in grado di avviare a scelta uno qualsiasi dei tre modelli di detection/pose/mesh-recovery e di collegarlo allo **stesso progetto Unity** di destinazione, senza dover riconfigurare nulla manualmente a ogni cambio di pipeline;
 2. poter **testare, confrontare e mostrare** le tre pipeline nella stessa sessione di lavoro, sulla stessa webcam, con lo stesso avatar, invece di dover ricorrere a macchine diverse o a registrazioni separate fatte da persone diverse.
 
 La macchina scelta per l'unificazione è un **MacBook Pro 16" Intel** (privo quindi sia di CUDA). Questa scelta ha imposto un vincolo trasversale a tutti e tre gli scenari, il filo conduttore dell'intero lavoro descritto in questa estensione: nessuno dei tre poteva più contare sull'accelerazione hardware NVIDIA per cui era stato originariamente scritto, e ciascuno ha dovuto essere adattato per funzionare **in modo stabile esclusivamente su CPU**.
@@ -69,12 +70,12 @@ Alcune note su questa organizzazione:
 
 - I tre repository dei modelli (`AlphaPose/`, `HybrIK/`, `mmdetection/`, `SAM3DBody-cpp/`) sono stati **clonati localmente**, con i rispettivi percorsi aggiunti a `sys.path` a runtime tramite un context manager dedicato (`in_directory`, v. §15.2) per gli scenari Python, mentre `SAM3DBody-cpp` viene compilato in loco con CMake e produce un eseguibile nativo indipendente dalla venv.
 - La cartella `venv_tesina_310/` è l'unico ambiente Python dell'intero progetto: la scelta di condividerla fra AlphaPose e MMDetection (invece di isolare ciascuno scenario nella propria venv) è il punto di partenza del capitolo 12 e la fonte dei principali conflitti di dipendenze incontrati.
-- `ImageProcessing/` è il repository applicativo vero e proprio del gruppo (quello che contiene gli script "finali" da lanciare, non le librerie di terze parti), con `test_vale/` come sottocartella di lavoro dedicata ai test della singola autrice.
+- `ImageProcessing/project_files` è il repository applicativo vero e proprio del gruppo (quello che contiene gli script "finali" da lanciare, non le librerie di terze parti), con `test_vale/` come sottocartella di lavoro dedicata ai test della singola autrice.
 - Il progetto Unity (contenente `AvatarController.cs`, `IPoseProvider.cs`, i vari Provider, `ConnectionManager.cs`, `UDPReceiver.cs`; v. capitolo 16) è gestito come repository/progetto separato, sviluppato e versionato indipendentemente dai colleghi che si occupano della parte C#; il collegamento fra le due parti avviene esclusivamente a runtime, via socket UDP sulla porta `5065`, e non richiede che i due progetti condividano una cartella comune.
 
 ---
 
-# 12. Un'unica venv per tre pipeline: costruzione dell'ambiente condiviso
+# 12. Costruzione dell'ambiente condiviso
 
 Il problema di fondo, comune a tutto questo capitolo, è che ospitare **tre pipeline eterogenee** (due basate su PyTorch e installate come pacchetti Python in modalità sviluppo, una scritta in C++ e compilata nativamente) sulla stessa macchina significa **condividere risorse di sistema** che, se toccate per uno scenario, possono rompere silenziosamente gli altri due.
 
@@ -111,7 +112,7 @@ pip install "opencv-python==4.9.0.80"
 pip install --no-build-isolation "git+https://github.com/facebookresearch/pytorch3d.git"
 ```
 
-## 12.3 Il terzo inquilino: SAM3DBody-cpp e la sua toolchain separata
+## 12.3 SAM3DBody-cpp e la sua toolchain separata
 
 A differenza di AlphaPose e MMDetection, **SAM3DBody-cpp non è un pacchetto Python**: è un progetto C++ compilato nativamente con **CMake** e collegato a librerie di sistema installate tramite **Homebrew** (`cmake`, `opencv`), completamente al di fuori della venv. Questo ha in parte protetto il progetto da un quarto potenziale conflitto di dipendenze Python — ma ha comunque richiesto attenzione a due punti di contatto con l'ambiente condiviso:
 
