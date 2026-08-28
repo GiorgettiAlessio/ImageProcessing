@@ -117,7 +117,7 @@ private Quaternion SmoothRotation(
 }
 ```
 
-## 3. Amplificazione della rotazione delle gambe
+### Amplificazione della rotazione delle gambe
 
 Aggiunta una funzione che amplifica l'angolo del delta di rotazione mantenendo lo stesso asse, applicata solo alle ossa delle gambe sempre per rendere il movimento migliore.
 
@@ -157,7 +157,7 @@ if (isLegBone)
 }
 ```
 
-## 4. Oscillazione del bacino (hip sway)
+### Oscillazione del bacino (hip sway)
 
 Funzione puramente procedurale, basata sul tempo di Unity, che aggiunge un piccolo movimento continuo al bacino sempre per rendere il movimento più realistico e meno "rigido".
 
