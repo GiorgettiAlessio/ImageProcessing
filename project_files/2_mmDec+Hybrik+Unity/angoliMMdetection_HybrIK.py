@@ -301,10 +301,8 @@ def main():
 
                 continue
 
-            # --------------------------------------------------------
             # NUOVA DETECTION
-            # --------------------------------------------------------
-
+    
             detected_bbox = person_bboxes[0][:4].tolist()
 
             # Salviamo il bbox originale
@@ -319,18 +317,13 @@ def main():
 
         else:
 
-            # --------------------------------------------------------
             # NESSUNA DETECTION
-            # --------------------------------------------------------
-
             if smoothed_bbox is None:
                 continue
 
 
-        # ------------------------------------------------------------
         # BBOX USATO DA HYBRIK
-        # ------------------------------------------------------------
-
+       
         tight_bbox = smoothed_bbox
 
         # --- HybrIK sullo stesso frame appena catturato ---

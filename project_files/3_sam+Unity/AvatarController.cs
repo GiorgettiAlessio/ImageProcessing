@@ -4,18 +4,12 @@ using Newtonsoft.Json;
 
 public class AvatarController : MonoBehaviour
 {
-    // ============================================================
-    // RIFERIMENTO DI RETE
-    // ============================================================
-
+ 
     [Header("Riferimento di Rete")]
     public UDPReceiver udpReceiver;
 
 
-    // ============================================================
-    // ROTAZIONI
-    // ============================================================
-
+ 
     [Header("Rotazioni")]
 
     [Tooltip("Smoothing generale delle ossa.")]
@@ -30,10 +24,6 @@ public class AvatarController : MonoBehaviour
     [Range(0f, 5f)]
     public float rotationDeadZone = 0.5f;
 
-
-    // ============================================================
-    // MOVIMENTO AVATAR
-    // ============================================================
 
     [Header("Movimento Avatar")]
 
@@ -50,19 +40,11 @@ public class AvatarController : MonoBehaviour
     public float positionSmoothing = 8f;
 
 
-    // ============================================================
-    // CALIBRAZIONE
-    // ============================================================
-
     [Header("Calibrazione")]
 
     [Tooltip("Secondi di attesa prima della calibrazione automatica.")]
     public float calibrationDelay = 5f;
 
-
-    // ============================================================
-    // DEBUG
-    // ============================================================
 
     [Header("Debug")]
 
@@ -73,10 +55,6 @@ public class AvatarController : MonoBehaviour
     [Tooltip("Stampa i messaggi di mapping mancanti.")]
     public bool debugMapping = false;
 
-
-    // ============================================================
-    // DATI INTERNI
-    // ============================================================
 
     private HashSet<string> receivedBoneNames =
         new HashSet<string>();
@@ -116,35 +94,19 @@ public class AvatarController : MonoBehaviour
     private float calibrationTimer = 0f;
 
 
-    // ============================================================
-    // ROOT POSITION
-    // ============================================================
-
     private Vector3 calibrationRootPosition;
 
     private Vector3 avatarInitialPosition;
 
 
-    // ============================================================
-    // BIND DIRECTIONS
-    // ============================================================
-
     private Dictionary<string, Vector3> bindBoneDirections =
         new Dictionary<string, Vector3>();
-
-
-    // ============================================================
-    // CONVERSIONE NOMI SAM → UNITY
-    // ============================================================
 
     private string ConvertSamBoneName(string samName)
     {
         switch (samName)
         {
-            // ----------------------------------------------------
             // Tronco
-            // ----------------------------------------------------
-
             case "hip":
                 return "hip";
 
@@ -161,10 +123,7 @@ public class AvatarController : MonoBehaviour
                 return "head";
 
 
-            // ----------------------------------------------------
             // Braccio sinistro
-            // ----------------------------------------------------
-
             case "lCollar":
                 return "lCollar";
 
@@ -178,10 +137,7 @@ public class AvatarController : MonoBehaviour
                 return "lHand";
 
 
-            // ----------------------------------------------------
             // Braccio destro
-            // ----------------------------------------------------
-
             case "rCollar":
                 return "rCollar";
 
@@ -194,11 +150,7 @@ public class AvatarController : MonoBehaviour
             case "rHand":
                 return "rHand";
 
-
-            // ----------------------------------------------------
             // Gamba sinistra
-            // ----------------------------------------------------
-
             case "lThigh":
                 return "lThigh";
 
@@ -209,10 +161,7 @@ public class AvatarController : MonoBehaviour
                 return "lFoot";
 
 
-            // ----------------------------------------------------
             // Gamba destra
-            // ----------------------------------------------------
-
             case "rThigh":
                 return "rThigh";
 
@@ -228,10 +177,6 @@ public class AvatarController : MonoBehaviour
         }
     }
 
-
-    // ============================================================
-    // INITIALIZE BIND DIRECTIONS
-    // ============================================================
 
     private void InitializeBindBoneDirections()
     {
@@ -286,10 +231,6 @@ public class AvatarController : MonoBehaviour
     }
 
 
-    // ============================================================
-    // SMOOTHING ROTAZIONE
-    // ============================================================
-
     private Quaternion SmoothRotation(
         Quaternion current,
         Quaternion target,
@@ -302,18 +243,14 @@ public class AvatarController : MonoBehaviour
             );
 
 
-        // --------------------------------------------------------
         // Dead zone anti-jitter
-        // --------------------------------------------------------
-
+        
         if (angle < rotationDeadZone)
             return current;
 
 
-        // --------------------------------------------------------
         // Smoothing adattivo
-        // --------------------------------------------------------
-
+        
         float normalizedAngle =
             Mathf.Clamp01(angle / 45f);
 
@@ -326,10 +263,8 @@ public class AvatarController : MonoBehaviour
             );
 
 
-        // --------------------------------------------------------
         // Smoothing indipendente dal frame rate
-        // --------------------------------------------------------
-
+        
         float t =
             1f -
             Mathf.Exp(
@@ -346,10 +281,7 @@ public class AvatarController : MonoBehaviour
     }
 
 
-    // ============================================================
-    // JOINT DIRECTION
-    // ============================================================
-
+   
     private Vector3 GetJointDirection(
         int parentIndex,
         int childIndex)
@@ -370,10 +302,7 @@ public class AvatarController : MonoBehaviour
     }
 
 
-    // ============================================================
-    // JSON
-    // ============================================================
-
+   
     [System.Serializable]
     public class JointData
     {
@@ -400,11 +329,6 @@ public class AvatarController : MonoBehaviour
         public JointData
             root_position;
     }
-
-
-    // ============================================================
-    // START
-    // ============================================================
 
     void Start()
     {
@@ -441,10 +365,6 @@ public class AvatarController : MonoBehaviour
         );
 
 
-        // --------------------------------------------------------
-        // UDP
-        // --------------------------------------------------------
-
         if (udpReceiver == null)
         {
             udpReceiver =
@@ -467,18 +387,9 @@ public class AvatarController : MonoBehaviour
         }
 
 
-        // --------------------------------------------------------
-        // Mapping
-        // --------------------------------------------------------
-
         InitializeBoneMapping();
 
         InitializeBindBoneDirections();
-
-
-        // --------------------------------------------------------
-        // Bind pose
-        // --------------------------------------------------------
 
         foreach (var kvp in boneMap)
         {
@@ -486,10 +397,6 @@ public class AvatarController : MonoBehaviour
                 kvp.Value.localRotation;
         }
 
-
-        // --------------------------------------------------------
-        // Posizione iniziale avatar
-        // --------------------------------------------------------
 
         avatarInitialPosition =
             transform.position;
@@ -510,19 +417,12 @@ public class AvatarController : MonoBehaviour
     }
 
 
-    // ============================================================
-    // MAPPING OSSA
-    // ============================================================
-
     private void InitializeBoneMapping()
     {
         boneMap.Clear();
 
 
-        // ========================================================
         // CORPO
-        // ========================================================
-
         MapBone(
             "hip",
             HumanBodyBones.Hips
@@ -548,11 +448,7 @@ public class AvatarController : MonoBehaviour
             HumanBodyBones.Head
         );
 
-
-        // ========================================================
         // BRACCIO DESTRO
-        // ========================================================
-
         MapBone(
             "rCollar",
             HumanBodyBones.RightShoulder
@@ -574,10 +470,7 @@ public class AvatarController : MonoBehaviour
         );
 
 
-        // ========================================================
         // BRACCIO SINISTRO
-        // ========================================================
-
         MapBone(
             "lCollar",
             HumanBodyBones.LeftShoulder
@@ -599,10 +492,7 @@ public class AvatarController : MonoBehaviour
         );
 
 
-        // ========================================================
         // GAMBA DESTRA
-        // ========================================================
-
         MapBone(
             "rThigh",
             HumanBodyBones.RightUpperLeg
@@ -619,10 +509,7 @@ public class AvatarController : MonoBehaviour
         );
 
 
-        // ========================================================
         // GAMBA SINISTRA
-        // ========================================================
-
         MapBone(
             "lThigh",
             HumanBodyBones.LeftUpperLeg
@@ -639,10 +526,7 @@ public class AvatarController : MonoBehaviour
         );
 
 
-        // ========================================================
         // MANO DESTRA
-        // ========================================================
-
         MapBone(
             "rthumb",
             HumanBodyBones.RightThumbProximal
@@ -722,11 +606,7 @@ public class AvatarController : MonoBehaviour
             HumanBodyBones.RightLittleDistal
         );
 
-
-        // ========================================================
         // MANO SINISTRA
-        // ========================================================
-
         MapBone(
             "lthumb",
             HumanBodyBones.LeftThumbProximal
@@ -835,10 +715,7 @@ public class AvatarController : MonoBehaviour
     }
 
 
-    // ============================================================
     // MAP SINGLE BONE
-    // ============================================================
-
     private void MapBone(
         string samName,
         HumanBodyBones humanoidBone)
@@ -887,10 +764,6 @@ public class AvatarController : MonoBehaviour
     }
 
 
-    // ============================================================
-    // UPDATE
-    // ============================================================
-
     void Update()
     {
         if (isCalibrated)
@@ -907,10 +780,6 @@ public class AvatarController : MonoBehaviour
         }
     }
 
-
-    // ============================================================
-    // CALIBRAZIONE
-    // ============================================================
 
     private void CalibrateNow()
     {
@@ -930,10 +799,7 @@ public class AvatarController : MonoBehaviour
         }
 
 
-        // --------------------------------------------------------
         // Calibrazione rotazioni
-        // --------------------------------------------------------
-
         calibrationRotations.Clear();
 
 
@@ -944,10 +810,7 @@ public class AvatarController : MonoBehaviour
         }
 
 
-        // --------------------------------------------------------
         // Calibrazione posizione
-        // --------------------------------------------------------
-
         calibrationRootPosition =
             lastRootPosition;
 
@@ -955,10 +818,7 @@ public class AvatarController : MonoBehaviour
         isCalibrated = true;
 
 
-        // --------------------------------------------------------
         // Inizializza target
-        // --------------------------------------------------------
-
         targetRotations.Clear();
 
         filteredRotations.Clear();
@@ -1025,10 +885,6 @@ public class AvatarController : MonoBehaviour
     }
 
 
-    // ============================================================
-    // LATE UPDATE
-    // ============================================================
-
     void LateUpdate()
     {
         if (udpReceiver == null)
@@ -1066,10 +922,7 @@ public class AvatarController : MonoBehaviour
             return;
 
 
-        // ========================================================
-        // ROOT POSITION
-        // ========================================================
-
+      
         if (motionData.root_position != null)
         {
             lastRootPosition =
@@ -1081,10 +934,7 @@ public class AvatarController : MonoBehaviour
         }
 
 
-        // ========================================================
-        // JOINT 3D
-        // ========================================================
-
+        
         if (
             motionData.joint_xyz_3d != null &&
             motionData.joint_xyz_3d.Count >= 72
@@ -1106,9 +956,6 @@ public class AvatarController : MonoBehaviour
         }
 
 
-        // ========================================================
-        // ROOT MOVEMENT
-        // ========================================================
 
         if (
             isCalibrated &&
@@ -1163,9 +1010,6 @@ public class AvatarController : MonoBehaviour
         }
 
 
-        // ========================================================
-        // ROTAZIONI
-        // ========================================================
 
         if (
             motionData.unity_rotations_deg ==
@@ -1185,9 +1029,6 @@ public class AvatarController : MonoBehaviour
                 item.Key;
 
 
-            // ----------------------------------------------------
-            // Debug single bone
-            // ----------------------------------------------------
 
             if (
                 debugSingleBone &&
@@ -1198,20 +1039,12 @@ public class AvatarController : MonoBehaviour
             }
 
 
-            // ----------------------------------------------------
-            // Dati validi?
-            // ----------------------------------------------------
-
+            
             if (item.Value == null)
                 continue;
 
 
-            // ----------------------------------------------------
-            // Python/BVH → Unity
-            //
-            // Il C++ attualmente invia Euler XYZ.
-            // ----------------------------------------------------
-
+            
             Quaternion raw =
                 Quaternion.Euler(
                     item.Value.x,
@@ -1239,18 +1072,12 @@ public class AvatarController : MonoBehaviour
             }
 
 
-            // ----------------------------------------------------
-            // Prima della calibrazione
-            // ----------------------------------------------------
-
+            
             if (!isCalibrated)
                 continue;
 
 
-            // ----------------------------------------------------
-            // Conversione nome
-            // ----------------------------------------------------
-
+            
             string unityBoneName =
                 ConvertSamBoneName(
                     samName
@@ -1279,10 +1106,7 @@ public class AvatarController : MonoBehaviour
             }
 
 
-            // ----------------------------------------------------
-            // Trova bone
-            // ----------------------------------------------------
-
+           
             if (
                 !boneMap.TryGetValue(
                     unityBoneName,
@@ -1312,10 +1136,7 @@ public class AvatarController : MonoBehaviour
             }
 
 
-            // ----------------------------------------------------
-            // Calibrazione
-            // ----------------------------------------------------
-
+            
             if (
                 !calibrationRotations.TryGetValue(
                     samName,
@@ -1341,10 +1162,8 @@ public class AvatarController : MonoBehaviour
             }
 
 
-            // ----------------------------------------------------
-            // Bind rotation
-            // ----------------------------------------------------
-
+            
+            
             if (
                 !bindRotations.TryGetValue(
                     unityBoneName,
@@ -1369,10 +1188,7 @@ public class AvatarController : MonoBehaviour
             }
 
 
-            // ----------------------------------------------------
-            // Delta dalla calibrazione
-            // ----------------------------------------------------
-
+            
             Quaternion delta =
                 Quaternion.Inverse(
                     calibration
@@ -1380,10 +1196,7 @@ public class AvatarController : MonoBehaviour
                 raw;
 
 
-            // ----------------------------------------------------
-            // Target
-            // ----------------------------------------------------
-
+            
             Quaternion targetRotation =
                 bindRotation *
                 delta;
@@ -1396,13 +1209,11 @@ public class AvatarController : MonoBehaviour
         }
 
 
-        // ========================================================
         // INTERPOLAZIONE CONTINUA
         //
         // Questa parte viene eseguita ad ogni frame Unity,
         // anche quando SAM non ha ancora prodotto una nuova posa.
-        // ========================================================
-
+       
         if (!isCalibrated)
             return;
 

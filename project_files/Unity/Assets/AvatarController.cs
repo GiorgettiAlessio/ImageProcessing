@@ -231,9 +231,7 @@ public class AvatarController : MonoBehaviour
         if (motionData.unity_rotations_deg == null)
             return;
 
-        // ========================================================
         // CALIBRAZIONE AUTOMATICA AL PRIMO FRAME VALIDO
-        // ========================================================
         if (!isCalibrated)
         {
             calibrationRotations.Clear();
@@ -256,9 +254,7 @@ public class AvatarController : MonoBehaviour
             Debug.Log("✅ Calibrazione automatica eseguita sul primo frame UDP!");
         }
 
-        // ========================================================
         // ROOT POSITION
-        // ========================================================
         if (motionData.root_position != null)
         {
             Vector3 currentRoot = new Vector3(
@@ -284,9 +280,7 @@ public class AvatarController : MonoBehaviour
             );
         }
 
-        // ========================================================
         // ROTAZIONI
-        // ========================================================
         foreach (var item in motionData.unity_rotations_deg)
         {
             if (debugSingleBone && item.Key != debugBoneName)

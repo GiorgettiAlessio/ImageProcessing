@@ -259,9 +259,7 @@ def root_to_unity(root_k):
 def main():
     args = parse_args()
 
-    # -----------------------------------------------------------------------
     # CUDA: niente fallback silenzioso su CPU
-    # -----------------------------------------------------------------------
     if not torch.cuda.is_available():
         raise RuntimeError(
             "CUDA non disponibile. Questo script è configurato per usare "
@@ -311,9 +309,7 @@ def main():
         or args.detector == "tracker"
     )
 
-    # -----------------------------------------------------------------------
     # Detector / webcam
-    # -----------------------------------------------------------------------
     print("Inizializzazione detector...", file=sys.stderr)
 
     det_loader = WebCamDetectionLoader(
@@ -325,9 +321,7 @@ def main():
 
     det_loader.start()
 
-    # -----------------------------------------------------------------------
     # HybrIK
-    # -----------------------------------------------------------------------
     print(
         f"Loading HybrIK pose model from {args.checkpoint}...",
         file=sys.stderr,
@@ -350,10 +344,7 @@ def main():
 
     pose_model.to(device)
     pose_model.eval()
-
-    # -----------------------------------------------------------------------
     # UDP
-    # -----------------------------------------------------------------------
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_dest = (args.udp_ip, args.udp_port)
 
@@ -373,9 +364,7 @@ def main():
     try:
         while True:
 
-            # ===============================================================
             # Detection + pose
-            # ===============================================================
             with torch.inference_mode():
 
                 (
@@ -409,9 +398,7 @@ def main():
                     non_blocking=True,
                 )
 
-                # -----------------------------------------------------------
                 # HybrIK inference
-                # -----------------------------------------------------------
                 if args.fp16:
                     with torch.autocast(
                         device_type="cuda",
@@ -427,14 +414,10 @@ def main():
                     pred_root,
                 ) = extract_output(output)
 
-                # -----------------------------------------------------------
                 # Rotazioni: matrici SMPL -> quaternioni x,y,z,w
-                # -----------------------------------------------------------
                 pred_rotations = prepare_rotations(pred_rotations)
 
-                # -----------------------------------------------------------
                 # Trasferimenti CPU minimizzati
-                # -----------------------------------------------------------
                 scores_cpu = (
                     scores.detach().cpu().tolist()
                     if torch.is_tensor(scores)
@@ -452,18 +435,14 @@ def main():
                         default=k,
                     )
 
-                    # -------------------------------------------------------
                     # Rotazioni: conversione diretta matrice -> quaternion
-                    # -------------------------------------------------------
                     unity_rotations = {}
 
                     if pred_rotations is not None and k < pred_rotations.shape[0]:
                         mats_k = pred_rotations[k].detach().float().cpu().numpy()
                         unity_rotations = rotmats_to_quat_dict(mats_k)
 
-                    # -------------------------------------------------------
                     # XYZ 3D
-                    # -------------------------------------------------------
                     xyz_list = []
 
                     if (
@@ -478,9 +457,7 @@ def main():
                             .tolist()
                         )
 
-                    # -------------------------------------------------------
                     # Root position
-                    # -------------------------------------------------------
                     root_position_unity = None
 
                     if (
@@ -491,9 +468,7 @@ def main():
                             pred_root[k]
                         )
 
-                    # -------------------------------------------------------
                     # UDP packet
-                    # -------------------------------------------------------
                     packet = {
                         "person_id": person_id,
                         "timestamp": time.time(),
@@ -520,9 +495,7 @@ def main():
                             flush=True,
                         )
 
-                    # -------------------------------------------------------
                     # Debug rotazioni
-                    # -------------------------------------------------------
                     if unity_rotations and not args.no_stdout:
                         print(
                             f"\n=== [PERSONA {person_id}] "
@@ -559,9 +532,7 @@ def main():
 
                         print("=" * 50)
 
-                # -----------------------------------------------------------
                 # Visualizzazione
-                # -----------------------------------------------------------
                 if args.vis:
                     cv2.imshow(
                         "AlphaPose Realtime Stream",
@@ -571,9 +542,7 @@ def main():
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         break
 
-            # ===============================================================
             # FPS
-            # ===============================================================
             frame_count += 1
 
             if args.print_fps and frame_count % 10 == 0:

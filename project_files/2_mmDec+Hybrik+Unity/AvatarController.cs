@@ -45,24 +45,13 @@ public class AvatarController : MonoBehaviour
 
     private Animator animator;
 
-    private Dictionary<string, Transform> boneMap =
-        new Dictionary<string, Transform>();
-
-    private Dictionary<string, Quaternion> bindRotations =
-        new Dictionary<string, Quaternion>();
-
-    private Dictionary<string, Quaternion> calibrationRotations =
-        new Dictionary<string, Quaternion>();
-
-    private Dictionary<string, Quaternion> lastRawRotation =
-        new Dictionary<string, Quaternion>();
-
+    private Dictionary<string, Transform> boneMap = new Dictionary<string, Transform>();
+    private Dictionary<string, Quaternion> bindRotations = new Dictionary<string, Quaternion>();
+    private Dictionary<string, Quaternion> calibrationRotations = new Dictionary<string, Quaternion>();
+    private Dictionary<string, Quaternion> lastRawRotation = new Dictionary<string, Quaternion>();
     private Vector3[] lastJoints3D = new Vector3[24];
-
     private bool isCalibrated = false;
-
-    private Dictionary<string, Vector3> bindBoneDirections =
-    new Dictionary<string, Vector3>();
+    private Dictionary<string, Vector3> bindBoneDirections = new Dictionary<string, Vector3>();
 
 
 
@@ -172,10 +161,6 @@ public class AvatarController : MonoBehaviour
         return direction.normalized;
     }
 
-    // ============================================================
-    // ROOT POSITION
-    // ============================================================
-
     // Posizione HybrIK al momento della calibrazione
     private Vector3 calibrationRootPosition;
 
@@ -183,11 +168,6 @@ public class AvatarController : MonoBehaviour
     private Vector3 avatarInitialPosition;
 
     private float calibrationTimer = 0f;
-
-
-    // ============================================================
-    // JSON
-    // ============================================================
 
     [System.Serializable]
     public class JointData
@@ -211,11 +191,6 @@ public class AvatarController : MonoBehaviour
 
         public JointData root_position;
     }
-
-
-    // ============================================================
-    // START
-    // ============================================================
 
     void Start()
     {
@@ -289,10 +264,6 @@ public class AvatarController : MonoBehaviour
         );
     }
 
-
-    // ============================================================
-    // MAPPING OSSA
-    // ============================================================
 
     private void InitializeBoneMapping()
     {
@@ -395,11 +366,6 @@ public class AvatarController : MonoBehaviour
         }
     }
 
-
-    // ============================================================
-    // UPDATE
-    // ============================================================
-
     void Update()
     {
         if (isCalibrated)
@@ -412,11 +378,6 @@ public class AvatarController : MonoBehaviour
             CalibrateNow();
         }
     }
-
-
-    // ============================================================
-    // CALIBRAZIONE
-    // ============================================================
 
     private void CalibrateNow()
     {
@@ -433,11 +394,6 @@ public class AvatarController : MonoBehaviour
             return;
         }
 
-
-        // --------------------------------------------------------
-        // CALIBRAZIONE ROTAZIONI
-        // --------------------------------------------------------
-
         calibrationRotations.Clear();
 
         foreach (var kvp in lastRawRotation)
@@ -446,10 +402,6 @@ public class AvatarController : MonoBehaviour
                 kvp.Value;
         }
 
-
-        // --------------------------------------------------------
-        // CALIBRAZIONE POSIZIONE
-        // --------------------------------------------------------
 
         // La posizione HybrIK in questo momento
         // diventa il nostro ZERO.
@@ -460,31 +412,25 @@ public class AvatarController : MonoBehaviour
         isCalibrated = true;
 
         Debug.Log(
-            "📍 Root position calibrata."
+            "Root position calibrata."
         );
 
         Debug.Log(
-            "📍 HybrIK root = "
+            "HybrIK root = "
             + calibrationRootPosition
         );
 
         Debug.Log(
-            "📍 Avatar initial position = "
+            "Avatar initial position = "
             + avatarInitialPosition
         );
 
         Debug.Log(
-            "✅ CALIBRAZIONE COMPLETATA: "
+            "CALIBRAZIONE COMPLETATA: "
             + calibrationRotations.Count
             + " giunti."
         );
     }
-
-
-    // ============================================================
-    // LATE UPDATE
-    // ============================================================
-
     void LateUpdate()
     {
         if (udpReceiver == null)
@@ -542,14 +488,6 @@ public class AvatarController : MonoBehaviour
             }
         }
 
-
-        
-
-
-        // ========================================================
-        // ROOT POSITION
-        // ========================================================
-
         if (
             isCalibrated &&
             motionData.root_position != null
@@ -600,10 +538,6 @@ public class AvatarController : MonoBehaviour
         }
 
 
-        // ========================================================
-        // ROTAZIONI
-        // ========================================================
-
         if (motionData.unity_rotations_deg == null)
             return;
 
@@ -622,11 +556,6 @@ public class AvatarController : MonoBehaviour
                 continue;
             }
 
-
-            // ----------------------------------------------------
-            // Quaternion Python → Unity
-            // ----------------------------------------------------
-
             Quaternion raw =
                 new Quaternion(
                     item.Value.x,
@@ -644,10 +573,7 @@ public class AvatarController : MonoBehaviour
                 continue;
 
 
-            // ----------------------------------------------------
-            // Bone
-            // ----------------------------------------------------
-
+           
             if (
                 !boneMap.TryGetValue(
                     item.Key,
@@ -659,10 +585,7 @@ public class AvatarController : MonoBehaviour
             }
 
 
-            // ----------------------------------------------------
-            // Calibrazione
-            // ----------------------------------------------------
-
+        
             if (
                 !calibrationRotations.TryGetValue(
                     item.Key,
@@ -674,19 +597,11 @@ public class AvatarController : MonoBehaviour
             }
 
 
-            // ----------------------------------------------------
-            // Delta rispetto alla T-pose
-            // ----------------------------------------------------
-
             Quaternion delta =
                 Quaternion.Inverse(
                     calibration
                 ) * raw;
 
-
-            // ----------------------------------------------------
-            // Bind pose avatar
-            // ----------------------------------------------------
 
             Quaternion bindRotation =
                 bindRotations[item.Key];
@@ -695,10 +610,6 @@ public class AvatarController : MonoBehaviour
             Quaternion targetRotation =
                 bindRotation * delta;
 
-
-            // ----------------------------------------------------
-            // Smoothing
-            // ----------------------------------------------------
 
             boneTransform.localRotation =
                 SmoothRotation(
